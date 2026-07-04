@@ -178,7 +178,8 @@ internal sealed unsafe class PanelWindow
                     _layoutItems = _layout.Compute(_tracker.Items, client, _dpi, _scrollOffset);
                 }
                 _thumbs?.Sync(_layoutItems, client, _tracker.ForegroundWindow);
-                _renderer.Paint(hwnd, _layoutItems, _tracker.ForegroundWindow, _dpi, _hoverClose);
+                _renderer.Paint(hwnd, _layoutItems, _tracker.ForegroundWindow, _dpi, _hoverClose,
+                    _press == PressState.Dragging ? _pressItem : null);
                 return new LRESULT(0);
 
             case PInvoke.WM_MOUSEWHEEL:
@@ -484,6 +485,7 @@ internal sealed unsafe class PanelWindow
                     CancelHoverZoom();
                     _press = PressState.Dragging;
                     PInvoke.SetCursor(PInvoke.LoadCursor(default, PInvoke.IDC_SIZENS));
+                    PInvoke.InvalidateRect(_hwnd, null, false); // подсветка таскаемого
                     DragTo(x, y);
                 }
                 break;
@@ -638,9 +640,12 @@ internal sealed unsafe class PanelWindow
 
     void EndPress()
     {
+        bool wasDragging = _press == PressState.Dragging;
         _press = PressState.None;
         _pressItem = null;
         PInvoke.ReleaseCapture();
+        if (wasDragging)
+            PInvoke.InvalidateRect(_hwnd, null, false); // снять подсветку таскаемого
     }
 
     /// <summary>Бросок панели: монитор под курсором, край — по половине монитора.</summary>

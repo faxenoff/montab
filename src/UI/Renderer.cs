@@ -25,12 +25,14 @@ internal sealed unsafe class Renderer : IDisposable
     readonly HBRUSH _accentBrush = PInvoke.CreateSolidBrush(Accent);
     readonly HBRUSH _frameBrush = PInvoke.CreateSolidBrush(new COLORREF(0x00404040));
     readonly HBRUSH _closeHoverBrush = PInvoke.CreateSolidBrush(new COLORREF(0x002311E8)); // #E81123
+    readonly HBRUSH _dragFillBrush = PInvoke.CreateSolidBrush(new COLORREF(0x004A4A4A));
+    readonly HBRUSH _dragFrameBrush = PInvoke.CreateSolidBrush(new COLORREF(0x00909090));
 
     HFONT _font;
     uint _fontDpi;
 
     public void Paint(HWND hwnd, IReadOnlyList<LayoutItem> layout, HWND activeWindow, uint dpi,
-        Montab.Core.WindowItem? hoverClose = null)
+        Montab.Core.WindowItem? hoverClose = null, Montab.Core.WindowItem? dragged = null)
     {
         EnsureFont(dpi);
 
@@ -58,9 +60,12 @@ internal sealed unsafe class Renderer : IDisposable
                     continue;
 
                 bool isActive = li.Window.Hwnd == activeWindow;
+                bool isDragged = li.Window == dragged;
                 if (!li.IsStrip)
                     DrawPreviewFrame(mem, li, isActive, dpi);
-                DrawLabel(mem, li, isActive, dpi, li.Window == hoverClose);
+                if (isDragged)
+                    DrawOutline(mem, li.Bounds, _dragFrameBrush, LayoutEngine.Scale(2, dpi));
+                DrawLabel(mem, li, isActive, dpi, li.Window == hoverClose, isDragged);
             }
 
             PInvoke.BitBlt(hdc, 0, 0, width, height, mem, 0, 0, ROP_CODE.SRCCOPY);
@@ -99,15 +104,20 @@ internal sealed unsafe class Renderer : IDisposable
     /// </summary>
     void DrawPreviewFrame(HDC hdc, LayoutItem li, bool isActive, uint dpi)
     {
-        int border = LayoutEngine.Scale(isActive ? 2 : 1, dpi);
+        DrawOutline(hdc, li.Bounds,
+            isActive ? _accentBrush : _frameBrush,
+            LayoutEngine.Scale(isActive ? 2 : 1, dpi));
+    }
+
+    static void DrawOutline(HDC hdc, RECT bounds, HBRUSH brush, int border)
+    {
         var frame = new RECT
         {
-            left = li.Bounds.left - border,
-            top = li.Bounds.top - border,
-            right = li.Bounds.right + border,
-            bottom = li.Bounds.bottom + border,
+            left = bounds.left - border,
+            top = bounds.top - border,
+            right = bounds.right + border,
+            bottom = bounds.bottom + border,
         };
-        var brush = isActive ? _accentBrush : _frameBrush;
         for (int i = 0; i < border; i++)
         {
             PInvoke.FrameRect(hdc, in frame, brush);
@@ -115,10 +125,10 @@ internal sealed unsafe class Renderer : IDisposable
         }
     }
 
-    void DrawLabel(HDC hdc, LayoutItem li, bool isActive, uint dpi, bool closeHover)
+    void DrawLabel(HDC hdc, LayoutItem li, bool isActive, uint dpi, bool closeHover, bool isDragged)
     {
         RECT r = li.Label;
-        PInvoke.FillRect(hdc, in r, isActive ? _stripActiveBrush : _stripBrush);
+        PInvoke.FillRect(hdc, in r, isDragged ? _dragFillBrush : isActive ? _stripActiveBrush : _stripBrush);
 
         int iconSize = LayoutEngine.Scale(14, dpi);
         int pad = LayoutEngine.Scale(5, dpi);
@@ -187,6 +197,8 @@ internal sealed unsafe class Renderer : IDisposable
         PInvoke.DeleteObject((HGDIOBJ)_accentBrush.Value);
         PInvoke.DeleteObject((HGDIOBJ)_frameBrush.Value);
         PInvoke.DeleteObject((HGDIOBJ)_closeHoverBrush.Value);
+        PInvoke.DeleteObject((HGDIOBJ)_dragFillBrush.Value);
+        PInvoke.DeleteObject((HGDIOBJ)_dragFrameBrush.Value);
         if (_font != default)
             PInvoke.DeleteObject((HGDIOBJ)_font.Value);
     }
