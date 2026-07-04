@@ -105,3 +105,7 @@ reservation), SetWinEventHook (window tracking without polling), GDI with a
 cached backbuffer (rendering), CsWin32 (P/Invoke source generator, no
 marshaling), Per-Monitor V2 DPI. .NET 11 + C# 15, NativeAOT. Zero allocations
 in a steady frame. Details in [PLAN.md](PLAN.md).
+
+## License
+
+[MIT](LICENSE).
