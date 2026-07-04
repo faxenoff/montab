@@ -23,6 +23,7 @@ internal sealed unsafe class Renderer : IDisposable
     readonly HBRUSH _stripBrush = PInvoke.CreateSolidBrush(StripFill);
     readonly HBRUSH _stripActiveBrush = PInvoke.CreateSolidBrush(StripActiveFill);
     readonly HBRUSH _accentBrush = PInvoke.CreateSolidBrush(Accent);
+    readonly HBRUSH _frameBrush = PInvoke.CreateSolidBrush(new COLORREF(0x00404040));
 
     HFONT _font;
     uint _fontDpi;
@@ -53,7 +54,10 @@ internal sealed unsafe class Renderer : IDisposable
                 if (li.Bounds.bottom < client.top || li.Bounds.top > client.bottom)
                     continue;
 
-                DrawStrip(mem, li, li.Window.Hwnd == activeWindow, dpi);
+                bool isActive = li.Window.Hwnd == activeWindow;
+                if (!li.IsStrip)
+                    DrawPreviewFrame(mem, li, isActive, dpi);
+                DrawLabel(mem, li, isActive, dpi);
             }
 
             PInvoke.BitBlt(hdc, 0, 0, width, height, mem, 0, 0, ROP_CODE.SRCCOPY);
@@ -69,9 +73,29 @@ internal sealed unsafe class Renderer : IDisposable
         }
     }
 
-    void DrawStrip(HDC hdc, LayoutItem li, bool isActive, uint dpi)
+    /// <summary>Рамка вокруг области, куда DWM компонует превью (рисовать поверх превью нельзя).</summary>
+    void DrawPreviewFrame(HDC hdc, LayoutItem li, bool isActive, uint dpi)
     {
-        RECT r = li.Bounds;
+        RECT fit = LayoutEngine.FitRect(li.Preview, li.Window.Aspect);
+        int border = LayoutEngine.Scale(isActive ? 2 : 1, dpi);
+        var frame = new RECT
+        {
+            left = fit.left - border,
+            top = fit.top - border,
+            right = fit.right + border,
+            bottom = fit.bottom + border,
+        };
+        var brush = isActive ? _accentBrush : _frameBrush;
+        for (int i = 0; i < border; i++)
+        {
+            PInvoke.FrameRect(hdc, in frame, brush);
+            frame.left++; frame.top++; frame.right--; frame.bottom--;
+        }
+    }
+
+    void DrawLabel(HDC hdc, LayoutItem li, bool isActive, uint dpi)
+    {
+        RECT r = li.Label;
         PInvoke.FillRect(hdc, in r, isActive ? _stripActiveBrush : _stripBrush);
 
         if (isActive)
@@ -90,7 +114,7 @@ internal sealed unsafe class Renderer : IDisposable
             PInvoke.DrawIconEx(hdc, iconX, iconY, li.Window.Icon, iconSize, iconSize, 0, default, DI_FLAGS.DI_NORMAL);
         }
 
-        PInvoke.SetTextColor(hdc, li.Window.IsMinimized ? TextDimColor : TextColor);
+        PInvoke.SetTextColor(hdc, li.IsStrip ? TextDimColor : TextColor);
         var textRect = new RECT
         {
             left = iconX + iconSize + pad,
@@ -132,6 +156,7 @@ internal sealed unsafe class Renderer : IDisposable
         PInvoke.DeleteObject((HGDIOBJ)_stripBrush.Value);
         PInvoke.DeleteObject((HGDIOBJ)_stripActiveBrush.Value);
         PInvoke.DeleteObject((HGDIOBJ)_accentBrush.Value);
+        PInvoke.DeleteObject((HGDIOBJ)_frameBrush.Value);
         if (_font != default)
             PInvoke.DeleteObject((HGDIOBJ)_font.Value);
     }

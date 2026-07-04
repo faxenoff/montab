@@ -40,6 +40,8 @@ internal sealed unsafe class WindowTracker : IDisposable
         Hook(PInvoke.EVENT_OBJECT_NAMECHANGE, PInvoke.EVENT_OBJECT_NAMECHANGE);
         // 0x8017..0x8018: CLOAKED, UNCLOAKED (UWP, виртуальные рабочие столы)
         Hook(PInvoke.EVENT_OBJECT_CLOAKED, PInvoke.EVENT_OBJECT_UNCLOAKED);
+        // Ресайз источника меняет аспект тайла
+        Hook(PInvoke.EVENT_OBJECT_LOCATIONCHANGE, PInvoke.EVENT_OBJECT_LOCATIONCHANGE);
 
         s_enumScratch.Clear();
         PInvoke.EnumWindows(&EnumWindowsProc, default);
@@ -137,6 +139,14 @@ internal sealed unsafe class WindowTracker : IDisposable
             case PInvoke.EVENT_SYSTEM_MINIMIZEEND:
                 SetMinimized(hwnd, false);
                 break;
+
+            case PInvoke.EVENT_OBJECT_LOCATIONCHANGE:
+                if (_byHwnd.TryGetValue(hwnd, out var moved) && !moved.IsMinimized
+                    && UpdateAspect(moved))
+                {
+                    Changed?.Invoke();
+                }
+                break;
         }
     }
 
@@ -173,7 +183,7 @@ internal sealed unsafe class WindowTracker : IDisposable
     static WindowItem CreateItem(HWND hwnd)
     {
         var icon = IconLoader.GetWindowIcon(hwnd, out bool owned);
-        return new WindowItem
+        var item = new WindowItem
         {
             Hwnd = hwnd,
             Title = GetWindowText(hwnd),
@@ -181,6 +191,25 @@ internal sealed unsafe class WindowTracker : IDisposable
             OwnsIcon = owned,
             IsMinimized = PInvoke.IsIconic(hwnd),
         };
+        UpdateAspect(item);
+        return item;
+    }
+
+    /// <summary>true — аспект источника ощутимо изменился.</summary>
+    static bool UpdateAspect(WindowItem item)
+    {
+        if (!PInvoke.GetClientRect(item.Hwnd, out RECT rc))
+            return false;
+        int w = rc.right - rc.left, h = rc.bottom - rc.top;
+        if (w <= 0 || h <= 0)
+            return false;
+
+        double aspect = (double)w / h;
+        if (Math.Abs(aspect - item.Aspect) < 0.01)
+            return false;
+
+        item.Aspect = aspect;
+        return true;
     }
 
     /// <summary>Классический alt-tab-фильтр + отсев cloaked-окон.</summary>

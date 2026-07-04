@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Montab.Config;
 using Montab.Core;
+using Montab.Thumbs;
 using Montab.UI;
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -36,6 +37,7 @@ internal sealed unsafe class PanelWindow
 
     HWND _hwnd;
     AppBar? _appBar;
+    ThumbnailManager? _thumbs;
     uint _dpi = 96;
     bool _updatingPosition;
     bool _resizing;
@@ -82,6 +84,7 @@ internal sealed unsafe class PanelWindow
         UpdatePosition();
         PInvoke.ShowWindow(_hwnd, SHOW_WINDOW_CMD.SW_SHOWNOACTIVATE);
 
+        _thumbs = new ThumbnailManager(_hwnd);
         _tracker.Changed += OnTrackerChanged;
         _tracker.Start();
     }
@@ -118,6 +121,7 @@ internal sealed unsafe class PanelWindow
             case PInvoke.WM_PAINT:
                 PInvoke.GetClientRect(hwnd, out RECT client);
                 _layoutItems = _layout.Compute(_tracker.Items, client, _dpi, _scrollOffset);
+                _thumbs?.Sync(_layoutItems, client, _tracker.ForegroundWindow);
                 _renderer.Paint(hwnd, _layoutItems, _tracker.ForegroundWindow, _dpi);
                 return new LRESULT(0);
 
@@ -183,6 +187,7 @@ internal sealed unsafe class PanelWindow
 
             case PInvoke.WM_DESTROY:
                 _tracker.Dispose();
+                _thumbs?.Dispose();
                 _renderer.Dispose();
                 _appBar?.Unregister();
                 _settings.Save();

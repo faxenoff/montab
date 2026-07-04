@@ -120,6 +120,20 @@ SetBkMode
 DrawTextW
 CreateFontW
 
+// dwm thumbnails
+DwmRegisterThumbnail
+DwmUnregisterThumbnail
+DwmUpdateThumbnailProperties
+DwmQueryThumbnailSourceSize
+DWM_THUMBNAIL_PROPERTIES
+DWM_TNP_RECTDESTINATION
+DWM_TNP_RECTSOURCE
+DWM_TNP_OPACITY
+DWM_TNP_VISIBLE
+DWM_TNP_SOURCECLIENTAREAONLY
+EVENT_OBJECT_LOCATIONCHANGE
+FrameRect
+
 // appbar
 SHAppBarMessage
 APPBARDATA
