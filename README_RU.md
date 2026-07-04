@@ -55,16 +55,19 @@ Chromium-браузеры (Chrome, Brave, Edge) отслеживают пере�
 
 ```powershell
 # Brave
-New-Item 'HKCU:\Software\Policies\BraveSoftware\Brave' -Force |
-  Set-ItemProperty -Name NativeWindowOcclusionEnabled -Value 0 -Type DWord
+New-Item 'HKCU:\Software\Policies\BraveSoftware\Brave' -Force | Out-Null
+New-ItemProperty 'HKCU:\Software\Policies\BraveSoftware\Brave' `
+  -Name NativeWindowOcclusionEnabled -Value 0 -PropertyType DWord -Force | Out-Null
 
 # Chrome
-New-Item 'HKCU:\Software\Policies\Google\Chrome' -Force |
-  Set-ItemProperty -Name NativeWindowOcclusionEnabled -Value 0 -Type DWord
+New-Item 'HKCU:\Software\Policies\Google\Chrome' -Force | Out-Null
+New-ItemProperty 'HKCU:\Software\Policies\Google\Chrome' `
+  -Name NativeWindowOcclusionEnabled -Value 0 -PropertyType DWord -Force | Out-Null
 
 # Edge
-New-Item 'HKCU:\Software\Policies\Microsoft\Edge' -Force |
-  Set-ItemProperty -Name NativeWindowOcclusionEnabled -Value 0 -Type DWord
+New-Item 'HKCU:\Software\Policies\Microsoft\Edge' -Force | Out-Null
+New-ItemProperty 'HKCU:\Software\Policies\Microsoft\Edge' `
+  -Name NativeWindowOcclusionEnabled -Value 0 -PropertyType DWord -Force | Out-Null
 ```
 
 Проверить, что политика применилась: `brave://policy` (или `chrome://policy`,

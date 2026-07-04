@@ -109,7 +109,8 @@ montab/
 │  ├─ App/
 │  │  ├─ PanelWindow.cs       # HWND, WndProc, вся state machine взаимодействий,
 │  │  │                       #   док/ресайз/перенос панели, контекстное меню, DPI-кеш
-│  │  └─ AppBar.cs            # обёртка SHAppBarMessage
+│  │  ├─ AppBar.cs            # обёртка SHAppBarMessage
+│  │  └─ Strings.cs           # строки меню RU/EN (GetUserDefaultUILanguage)
 │  ├─ Core/
 │  │  ├─ WindowTracker.cs     # EnumWindows + WinEventHook → двухсекционный список
 │  │  ├─ WindowItem.cs        # hwnd, title, icon, аспект, IsMinimized, zoom/center
@@ -190,7 +191,8 @@ montab/
   чужой крестик).
 - Активное окно: акцентная рамка вокруг всего блока + затенение превью
   (`opacity` ≈ 110).
-- Контекстное меню: край дока, автозапуск (HKCU\...\Run), выход.
+- Контекстное меню: край дока, автозапуск (HKCU\...\Run), выход; локализовано
+  (русский язык системы → русский, иначе английский).
 - Настройки (край, ширина, монитор) сохраняются при каждом изменении
   и на `WM_ENDSESSION`; восстанавливаются при старте (пропавший монитор →
   primary).
