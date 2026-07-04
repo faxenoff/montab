@@ -20,8 +20,6 @@ internal sealed class SwitchController
     /// <summary>Фильтр целей автоперехода (панель исключает полоски: свёрнутые/погашенные).</summary>
     public Func<HWND, bool>? IsEligibleTarget { get; set; }
 
-    HWND Current => _history.Count > 0 ? _history[0] : default;
-
     public void OnForegroundChanged(HWND hwnd)
     {
         if (hwnd == default)
@@ -32,19 +30,7 @@ internal sealed class SwitchController
             _history.RemoveAt(_history.Count - 1);
     }
 
-    public void Activate(HWND target)
-    {
-        if (target == Current)
-        {
-            // Повторный клик по активному — «туда-обратно» по истории
-            ActivateMostRecentExcept(target);
-            return;
-        }
-        ActivateCore(target);
-    }
-
-    /// <summary>Активация без «туда-обратно»-семантики (клик по полоске — всегда в неё).</summary>
-    public void ActivateDirect(HWND target) => ActivateCore(target);
+    public void Activate(HWND target) => ActivateCore(target);
 
     /// <summary>
     /// Активирует последнее по истории открытое окно, пропуская указанное,

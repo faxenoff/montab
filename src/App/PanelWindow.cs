@@ -30,7 +30,10 @@ internal sealed unsafe class PanelWindow
     const string AutostartRunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     const string AutostartValue = "montab";
 
+    const nuint ActivateTimerId = 1;
     const nuint HoverZoomTimerId = 2;
+    /// <summary>Окно ожидания второго клика по заголовку живого тайла.</summary>
+    const uint LabelActivateDelayMs = 300;
     const uint HoverZoomDelayMs = 700;
     const double HoverZoomFactor = 5.0;
     const nint MK_CONTROL = 0x0008;
@@ -57,10 +60,10 @@ internal sealed unsafe class PanelWindow
     bool _updatingPosition;
     bool _resizing;
 
-    // Контекст последнего клика по заголовку/полоске: двойной клик детектируем сами —
-    // системный WM_LBUTTONDBLCLK ненадёжен, когда лента перестраивается после первого клика.
-    WindowItem? _labelClickItem;
-    bool _labelClickWasStrip;
+    // Двойной клик детектируем сами: системный WM_LBUTTONDBLCLK ненадёжен,
+    // когда лента перестраивается после первого клика.
+    WindowItem? _pendingLabelItem; // заголовок живого тайла ждёт активации по таймеру
+    WindowItem? _labelClickItem;   // последняя кликнутая полоска (для «вернуть фокус» вторым кликом)
     int _labelClickTick;
     int _labelClickX, _labelClickY;
     int _closeClickTick;
@@ -263,7 +266,17 @@ internal sealed unsafe class PanelWindow
                 return new LRESULT(0);
 
             case PInvoke.WM_TIMER:
-                if (wParam.Value == HoverZoomTimerId)
+                if (wParam.Value == ActivateTimerId)
+                {
+                    PInvoke.KillTimer(hwnd, ActivateTimerId);
+                    if (_pendingLabelItem is { } pending)
+                    {
+                        _pendingLabelItem = null;
+                        if (PInvoke.IsWindow(pending.Hwnd))
+                            _switch.Activate(pending.Hwnd);
+                    }
+                }
+                else if (wParam.Value == HoverZoomTimerId)
                 {
                     PInvoke.KillTimer(hwnd, HoverZoomTimerId);
                     TryBeginHoverZoom();
@@ -458,11 +471,15 @@ internal sealed unsafe class PanelWindow
         // «Ручка» сверху или пустая зона — перетаскивание всей панели
         if (y < LayoutEngine.Scale(LayoutEngine.HeaderLogical, _dpi) || HitTest(x, y) is not { } li)
         {
+            CancelPendingActivation();
             _press = PressState.PanelDrag;
             PInvoke.SetCapture(_hwnd);
             PInvoke.SetCursor(PInvoke.LoadCursor(default, PInvoke.IDC_SIZEALL));
             return;
         }
+
+        // Нажатие по другому элементу отменяет ожидающую активацию
+        CancelPendingActivation(unless: li.Window);
 
         // Клик не должен внезапно включать hover-лупу
         ClearHoverCandidate();
@@ -483,6 +500,7 @@ internal sealed unsafe class PanelWindow
                 if (Math.Abs(x - _pressX) > threshold || Math.Abs(y - _pressY) > threshold)
                 {
                     CancelHoverZoom();
+                    CancelPendingActivation();
                     _press = PressState.Dragging;
                     PInvoke.SetCursor(PInvoke.LoadCursor(default, PInvoke.IDC_SIZENS));
                     PInvoke.InvalidateRect(_hwnd, null, false); // подсветка таскаемого
@@ -727,41 +745,47 @@ internal sealed unsafe class PanelWindow
             return;
         }
 
-        // Второй клик рядом с первым = двойной. Работаем с элементом первого клика:
-        // лента могла перестроиться, и под курсором уже другой элемент.
+        // Полоска: второй клик подряд возвращает фокус по истории — первый уже
+        // развернул окно и оживил превью (элемент первого клика запомнен: лента
+        // могла перестроиться, и под курсором уже другой элемент).
         if (_labelClickItem is { } prev && IsRepeatClick(_labelClickTick, _labelClickX, _labelClickY, x, y))
         {
             _labelClickItem = null;
-
-            // Для живого тайла двойной клик — «свернуть превью в полоску»
-            if (!_labelClickWasStrip)
-                _tracker.ToggleCollapsed(prev);
-
-            // Фокус — в последнее по истории открытое окно; сам элемент и все
-            // скрытые исключаются (фильтр IsEligibleTarget), иначе серия
-            // «скрыть несколько подряд» скачет по только что скрытым окнам.
             _switch.ActivateMostRecentExcept(prev.Hwnd);
             return;
         }
 
-        // Одиночный клик по заголовку/полоске — мгновенная активация
+        if (!li.IsStrip)
+        {
+            // Заголовок живого тайла: короткое окно ожидания второго клика.
+            // Двойной клик сворачивает превью, вообще не трогая фокус —
+            // без мигающего переключения в приложение между кликами.
+            if (_pendingLabelItem == li.Window)
+            {
+                CancelPendingActivation();
+                _tracker.ToggleCollapsed(li.Window);
+                return;
+            }
+            _pendingLabelItem = li.Window;
+            PInvoke.SetTimer(_hwnd, ActivateTimerId, LabelActivateDelayMs, null);
+            return;
+        }
+
+        // Полоска: мгновенно оживить превью и переключиться «в неё», без toggle-back
         _labelClickItem = li.Window;
-        _labelClickWasStrip = li.IsStrip;
         _labelClickTick = Environment.TickCount;
         _labelClickX = x;
         _labelClickY = y;
+        _tracker.SetCollapsed(li.Window, false);
+        _switch.Activate(li.Window.Hwnd);
+    }
 
-        if (li.IsStrip)
-        {
-            // Явный клик по полоске всегда оживляет превью (не ждём foreground-хук
-            // с его grace-периодом) и всегда идёт «в неё», без toggle-back.
-            _tracker.SetCollapsed(li.Window, false);
-            _switch.ActivateDirect(li.Window.Hwnd);
-        }
-        else
-        {
-            _switch.Activate(li.Window.Hwnd);
-        }
+    void CancelPendingActivation(WindowItem? unless = null)
+    {
+        if (_pendingLabelItem is null || _pendingLabelItem == unless)
+            return;
+        PInvoke.KillTimer(_hwnd, ActivateTimerId);
+        _pendingLabelItem = null;
     }
 
     /// <summary>Второй клик того же жеста: в пределах double-click-времени (с запасом) и рядом.</summary>
