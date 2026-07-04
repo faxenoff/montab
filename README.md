@@ -56,23 +56,27 @@ your browser and restart it:
 # Brave
 New-Item 'HKCU:\Software\Policies\BraveSoftware\Brave' -Force | Out-Null
 New-ItemProperty 'HKCU:\Software\Policies\BraveSoftware\Brave' `
-  -Name NativeWindowOcclusionEnabled -Value 0 -PropertyType DWord -Force | Out-Null
+  -Name WindowOcclusionEnabled -Value 0 -PropertyType DWord -Force | Out-Null
 
 # Chrome
 New-Item 'HKCU:\Software\Policies\Google\Chrome' -Force | Out-Null
 New-ItemProperty 'HKCU:\Software\Policies\Google\Chrome' `
-  -Name NativeWindowOcclusionEnabled -Value 0 -PropertyType DWord -Force | Out-Null
+  -Name WindowOcclusionEnabled -Value 0 -PropertyType DWord -Force | Out-Null
 
 # Edge
 New-Item 'HKCU:\Software\Policies\Microsoft\Edge' -Force | Out-Null
 New-ItemProperty 'HKCU:\Software\Policies\Microsoft\Edge' `
-  -Name NativeWindowOcclusionEnabled -Value 0 -PropertyType DWord -Force | Out-Null
+  -Name WindowOcclusionEnabled -Value 0 -PropertyType DWord -Force | Out-Null
 ```
 
+(The older `NativeWindowOcclusionEnabled` policy is deprecated/removed from
+Chromium and shows up as "Unknown policy" — `WindowOcclusionEnabled` is its
+replacement.)
+
 Verify it took effect at `brave://policy` (or `chrome://policy`,
-`edge://policy`) — `NativeWindowOcclusionEnabled: 0` should be listed.
+`edge://policy`) — `WindowOcclusionEnabled: 0` should be listed without errors.
 To roll back, delete the value:
-`Remove-ItemProperty 'HKCU:\Software\Policies\BraveSoftware\Brave' -Name NativeWindowOcclusionEnabled`.
+`Remove-ItemProperty 'HKCU:\Software\Policies\BraveSoftware\Brave' -Name WindowOcclusionEnabled`.
 
 Registry-free alternative — launch flags in the browser shortcut:
 `--disable-features=CalculateNativeWinOcclusion --disable-backgrounding-occluded-windows`.

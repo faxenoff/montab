@@ -57,23 +57,27 @@ Chromium-браузеры (Chrome, Brave, Edge) отслеживают пере�
 # Brave
 New-Item 'HKCU:\Software\Policies\BraveSoftware\Brave' -Force | Out-Null
 New-ItemProperty 'HKCU:\Software\Policies\BraveSoftware\Brave' `
-  -Name NativeWindowOcclusionEnabled -Value 0 -PropertyType DWord -Force | Out-Null
+  -Name WindowOcclusionEnabled -Value 0 -PropertyType DWord -Force | Out-Null
 
 # Chrome
 New-Item 'HKCU:\Software\Policies\Google\Chrome' -Force | Out-Null
 New-ItemProperty 'HKCU:\Software\Policies\Google\Chrome' `
-  -Name NativeWindowOcclusionEnabled -Value 0 -PropertyType DWord -Force | Out-Null
+  -Name WindowOcclusionEnabled -Value 0 -PropertyType DWord -Force | Out-Null
 
 # Edge
 New-Item 'HKCU:\Software\Policies\Microsoft\Edge' -Force | Out-Null
 New-ItemProperty 'HKCU:\Software\Policies\Microsoft\Edge' `
-  -Name NativeWindowOcclusionEnabled -Value 0 -PropertyType DWord -Force | Out-Null
+  -Name WindowOcclusionEnabled -Value 0 -PropertyType DWord -Force | Out-Null
 ```
 
+(Старая политика `NativeWindowOcclusionEnabled` устарела и удалена из
+Chromium — показывается как «Unknown policy»; `WindowOcclusionEnabled` — её
+замена.)
+
 Проверить, что политика применилась: `brave://policy` (или `chrome://policy`,
-`edge://policy`) — там должна появиться `NativeWindowOcclusionEnabled: 0`.
+`edge://policy`) — там должна появиться `WindowOcclusionEnabled: 0` без ошибок.
 Откат — удалить значение:
-`Remove-ItemProperty 'HKCU:\Software\Policies\BraveSoftware\Brave' -Name NativeWindowOcclusionEnabled`.
+`Remove-ItemProperty 'HKCU:\Software\Policies\BraveSoftware\Brave' -Name WindowOcclusionEnabled`.
 
 Альтернатива без реестра — ключи в ярлыке браузера:
 `--disable-features=CalculateNativeWinOcclusion --disable-backgrounding-occluded-windows`.
