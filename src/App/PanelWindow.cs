@@ -32,7 +32,7 @@ internal sealed unsafe class PanelWindow
 
     const nuint ActivateTimerId = 1;
     const nuint HoverZoomTimerId = 2;
-    const uint HoverZoomDelayMs = 350;
+    const uint HoverZoomDelayMs = 700;
     const double HoverZoomFactor = 3.0;
     const nint MK_CONTROL = 0x0008;
 
