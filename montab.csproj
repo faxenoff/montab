@@ -2,7 +2,9 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net11.0-windows</TargetFramework>
+    <!-- C# 15 (preview, ставится вместе с .NET 11 preview SDK) -->
+    <LangVersion>preview</LangVersion>
     <RootNamespace>Montab</RootNamespace>
     <AssemblyName>montab</AssemblyName>
     <Nullable>enable</Nullable>

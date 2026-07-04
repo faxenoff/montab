@@ -34,7 +34,7 @@
 
 ## Сборка
 
-Требуется .NET 10 SDK и MSVC (для NativeAOT-линковки). Windows 10 1809+.
+Требуется .NET 11 SDK (сейчас — preview 5+) и MSVC (для NativeAOT-линковки). Windows 10 1809+.
 
 ```powershell
 dotnet build                     # dev-сборка

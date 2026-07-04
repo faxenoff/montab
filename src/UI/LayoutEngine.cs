@@ -25,7 +25,8 @@ internal sealed class LayoutEngine
 
     public List<LayoutItem> Compute(IReadOnlyList<WindowItem> items, RECT client, uint dpi, int scrollOffset)
     {
-        var result = new List<LayoutItem>(items.Count);
+        // C# 15: аргументы конструктора в collection expression
+        List<LayoutItem> result = [with(capacity: items.Count)];
 
         int gap = Scale(GapLogical, dpi);
         int padding = Scale(PaddingLogical, dpi);
