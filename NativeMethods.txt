@@ -76,6 +76,13 @@ MONITORINFOF_PRIMARY
 IsWindow
 keybd_event
 
+// interaction timers & double click
+SetTimer
+KillTimer
+GetDoubleClickTime
+WM_TIMER
+WM_LBUTTONDBLCLK
+
 // window tracking
 SetWinEventHook
 UnhookWinEvent

@@ -53,9 +53,10 @@ internal sealed class LayoutEngine
                 int previewHeight = Math.Clamp(
                     (int)Math.Round(width / aspect), minPreview, (int)(width * MaxPreviewHeightFactor));
 
-                bounds = new RECT { left = left, top = y, right = left + width, bottom = y + previewHeight + labelHeight };
-                preview = new RECT { left = left, top = y, right = left + width, bottom = y + previewHeight };
-                label = new RECT { left = left, top = y + previewHeight, right = left + width, bottom = bounds.bottom };
+                // Заголовок сверху, превью под ним
+                bounds = new RECT { left = left, top = y, right = left + width, bottom = y + labelHeight + previewHeight };
+                label = new RECT { left = left, top = y, right = left + width, bottom = y + labelHeight };
+                preview = new RECT { left = left, top = y + labelHeight, right = left + width, bottom = bounds.bottom };
             }
 
             result.Add(new LayoutItem(item, bounds, preview, label, isStrip));
