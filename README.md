@@ -1,55 +1,56 @@
 # montab
 
-Боковая панель-таскбар для Windows с **постоянными живыми превью** всех открытых
-окон. Док слева или справа, резервирует рабочую область (развёрнутые окна не
-перекрывают панель), обновление превью — в реальном времени через DWM-композитор,
-практически бесплатно по ресурсам.
+**EN** | [RU](README_RU.md)
 
-Один exe **1,95 МБ** (.NET 11 NativeAOT, ноль зависимостей), ~4 МБ собственной
-памяти, ~0% CPU в простое.
+A Windows sidebar taskbar with **always-on live previews** of every open
+window. Docks to the left or right edge, reserves the work area (maximized
+windows never overlap the panel), previews update in real time straight from
+the DWM compositor — practically free in terms of resources.
 
-## Возможности
+A single **1.95 MB** exe (.NET 11 NativeAOT, zero dependencies), ~4 MB of
+private memory, ~0% CPU when idle.
 
-- Живые превью всех окон со всех мониторов, аспект сохраняется.
-- Лента из двух секций: сверху живые превью (новые окна — в самый верх),
-  снизу — свёрнутые окна компактными полосками с иконкой и названием.
-  Свернувшееся окно встаёт первым среди полосок, развернувшееся — последним
-  среди живых.
-- Активное окно подсвечено рамкой, его превью затенено.
-- После сворачивания фокус уходит в последнее по истории открытое окно
-  (свёрнутые пропускаются).
-- Виртуализация: превью за пределами видимости не потребляют ресурсы.
-- Панель помнит монитор, край и ширину между запусками
+## Features
+
+- Live previews of all windows from all monitors, aspect ratio preserved.
+- Two-section list: live previews on top (new windows go to the very top),
+  minimized windows below as compact strips with an icon and title.
+  A window that gets minimized becomes the first strip; a restored one
+  becomes the last live tile.
+- The active window is highlighted with an accent frame, its preview dimmed.
+- After minimizing, focus goes to the most recently used open window
+  (minimized ones are skipped).
+- Virtualization: previews scrolled out of view consume nothing.
+- The panel remembers its monitor, edge and width between runs
   (`%APPDATA%\montab\settings.json`).
 
-## Управление
+## Controls
 
-| Действие | Результат |
+| Action | Result |
 |---|---|
-| Клик по живому превью | Переключение в окно (задержка ~150 мс — отличение от двойного клика) |
-| Клик по полоске | Мгновенный restore + переключение (двойной клик делает то же) |
-| Двойной клик по живому превью (в любом месте) | Свернуть окно (системный minimize) в полоску |
-| Клик по ✕ в заголовке | Закрыть приложение |
-| Колесо мыши | Прокрутка ленты |
-| Наведение на превью (~0,7 с) | Временная лупа ×5, движение мыши панорамирует; уход с превью — возврат |
-| Ctrl + колесо над превью | Постоянный zoom ×1–5 |
-| Ctrl + движение мыши | Панорамирование увеличенного превью |
-| Ctrl + клик | Сброс zoom/pan |
-| Перетаскивание превью | Изменение порядка (в пределах своей секции; таскаемый элемент подсвечен) |
-| Перетаскивание за «ручку» сверху или пустую зону | Перенос панели на другой монитор/край (край — по половине монитора) |
-| Перетаскивание внутреннего края | Ширина панели (3–20% ширины монитора) |
-| Правый клик | Меню: край дока, автозапуск, выход |
+| Click a live preview | Switch to the window (~150 ms delay — to distinguish from a double click) |
+| Click a strip | Instant restore + switch (double click does the same) |
+| Double-click a live preview (anywhere) | Minimize the window (real system minimize) into a strip |
+| Click ✕ in the title bar | Close the application |
+| Mouse wheel | Scroll the list |
+| Hover over a preview (~0.7 s) | Temporary ×5 magnifier; mouse movement pans; leaving the preview restores |
+| Ctrl + wheel over a preview | Persistent zoom ×1–5 |
+| Ctrl + mouse move | Pan the zoomed preview |
+| Ctrl + click | Reset zoom/pan |
+| Drag a preview | Reorder (within its own section; the dragged item is highlighted) |
+| Drag the top handle or empty area | Move the panel to another monitor/edge (edge picked by monitor half) |
+| Drag the inner edge | Panel width (3–20% of monitor width) |
+| Right click | Menu: dock edge, autostart, exit |
 
-## Браузер замирает в превью?
+## Browser preview freezes?
 
-Chromium-браузеры (Chrome, Brave, Edge) отслеживают перекрытие своего окна
-(«native window occlusion»): как только окно полностью закрыто другими,
-браузер перестаёт рендерить кадры — звук играет, а превью в панели замирает
-на последнем кадре. Это не ограничение montab: DWM показывает только то, что
-приложение само отрисовало.
+Chromium browsers (Chrome, Brave, Edge) track native window occlusion: once
+their window is fully covered by others, the browser stops rendering frames —
+audio keeps playing while the panel preview freezes on the last frame. This is
+not a montab limitation: DWM can only show what the application itself drew.
 
-Лечится штатной политикой браузера — выполните в PowerShell **одну** команду
-под свой браузер и перезапустите его:
+The fix is an official browser policy — run **one** PowerShell command for
+your browser and restart it:
 
 ```powershell
 # Brave
@@ -65,38 +66,39 @@ New-Item 'HKCU:\Software\Policies\Microsoft\Edge' -Force |
   Set-ItemProperty -Name NativeWindowOcclusionEnabled -Value 0 -Type DWord
 ```
 
-Проверить, что политика применилась: `brave://policy` (или `chrome://policy`,
-`edge://policy`) — там должна появиться `NativeWindowOcclusionEnabled: 0`.
-Откат — удалить значение:
+Verify it took effect at `brave://policy` (or `chrome://policy`,
+`edge://policy`) — `NativeWindowOcclusionEnabled: 0` should be listed.
+To roll back, delete the value:
 `Remove-ItemProperty 'HKCU:\Software\Policies\BraveSoftware\Brave' -Name NativeWindowOcclusionEnabled`.
 
-Альтернатива без реестра — ключи в ярлыке браузера:
+Registry-free alternative — launch flags in the browser shortcut:
 `--disable-features=CalculateNativeWinOcclusion --disable-backgrounding-occluded-windows`.
 
-Цена: полностью перекрытый браузер продолжает тратить GPU/CPU на отрисовку.
-На свёрнутые окна не влияет (они в панели и так полоски).
+The cost: a fully covered browser keeps spending GPU/CPU on rendering.
+Minimized windows are unaffected (they are strips in the panel anyway).
 
-## Сборка
+## Building
 
-Требуется .NET 11 SDK (сейчас — preview 5+) и MSVC (для NativeAOT-линковки). Windows 10 1809+.
+Requires the .NET 11 SDK (currently preview 5+) and MSVC (for NativeAOT
+linking). Windows 10 1809+.
 
 ```powershell
-dotnet build                           # dev-сборка
-dotnet publish -c Release -r win-x64   # один exe ~2 МБ
+dotnet build                           # dev build
+dotnet publish -c Release -r win-x64   # single ~2 MB exe
 ```
 
-Release-сборка обрезана жёстко: без стектрейсов и текстов исключений
-(`StackTraceSupport=false`, `UseSystemResourceKeys=true`) — для отладки
-используйте dev-сборку.
+The Release build is trimmed hard: no stack traces and no exception message
+texts (`StackTraceSupport=false`, `UseSystemResourceKeys=true`) — use the dev
+build for debugging.
 
-Если линковка падает с ошибкой про `vswhere.exe`, добавьте в PATH:
+If linking fails complaining about `vswhere.exe`, add to PATH:
 `C:\Program Files (x86)\Microsoft Visual Studio\Installer`.
 
-## Технологии
+## Technology
 
-Чистый Win32 (без WPF/WinUI): DWM Thumbnail API (превью — композитор отдаёт
-кадры окон без захвата и кодирования), AppBar API (резервирование рабочей
-области), SetWinEventHook (трекинг окон без поллинга), GDI с кешированным
-backbuffer (отрисовка), CsWin32 (P/Invoke source generator, без маршалинга),
-Per-Monitor V2 DPI. .NET 11 + C# 15, NativeAOT. В стабильном кадре — ноль
-аллокаций. Подробности — в [PLAN.md](PLAN.md).
+Pure Win32 (no WPF/WinUI): DWM Thumbnail API (previews — the compositor
+serves window frames with no capture or encoding), AppBar API (work-area
+reservation), SetWinEventHook (window tracking without polling), GDI with a
+cached backbuffer (rendering), CsWin32 (P/Invoke source generator, no
+marshaling), Per-Monitor V2 DPI. .NET 11 + C# 15, NativeAOT. Zero allocations
+in a steady frame. Details in [PLAN.md](PLAN.md).
