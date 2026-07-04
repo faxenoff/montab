@@ -30,7 +30,6 @@ internal sealed unsafe class PanelWindow
     const string AutostartRunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     const string AutostartValue = "montab";
 
-    const nuint ActivateTimerId = 1;
     const nuint HoverZoomTimerId = 2;
     const uint HoverZoomDelayMs = 700;
     const double HoverZoomFactor = 3.0;
@@ -58,7 +57,11 @@ internal sealed unsafe class PanelWindow
     bool _updatingPosition;
     bool _resizing;
     bool _swallowNextUp;
-    HWND _pendingActivate;
+
+    // Контекст последнего клика по заголовку/полоске — для отката при двойном клике
+    WindowItem? _labelClickItem;
+    bool _labelClickWasStrip;
+    HWND _focusBeforeClick;
 
     PressState _press;
     WindowItem? _pressItem;
@@ -265,16 +268,7 @@ internal sealed unsafe class PanelWindow
                 return new LRESULT(0);
 
             case PInvoke.WM_TIMER:
-                if (wParam.Value == ActivateTimerId)
-                {
-                    PInvoke.KillTimer(hwnd, ActivateTimerId);
-                    if (_pendingActivate != default)
-                    {
-                        _switch.Activate(_pendingActivate);
-                        _pendingActivate = default;
-                    }
-                }
-                else if (wParam.Value == HoverZoomTimerId)
+                if (wParam.Value == HoverZoomTimerId)
                 {
                     PInvoke.KillTimer(hwnd, HoverZoomTimerId);
                     TryBeginHoverZoom();
@@ -701,6 +695,8 @@ internal sealed unsafe class PanelWindow
 
     void OnClick(int x, int y, bool ctrl)
     {
+        _labelClickItem = null;
+
         if (HitTest(x, y) is not { } li)
             return;
 
@@ -724,26 +720,31 @@ internal sealed unsafe class PanelWindow
             return;
         }
 
-        // Клик по заголовку/полоске активируем с задержкой,
-        // чтобы двойной клик мог его отменить (dblclick = свернуть/развернуть).
-        _pendingActivate = li.Window.Hwnd;
-        PInvoke.SetTimer(_hwnd, ActivateTimerId, PInvoke.GetDoubleClickTime(), null);
+        // Заголовок/полоска: активируем сразу; если придёт второй клик (dblclick),
+        // он откатит переключение фокуса, а окно/превью останутся развёрнутыми.
+        _labelClickItem = li.Window;
+        _labelClickWasStrip = li.IsStrip;
+        _focusBeforeClick = PInvoke.GetForegroundWindow();
+        _switch.Activate(li.Window.Hwnd);
     }
 
     void OnDoubleClick(int x, int y)
     {
-        PInvoke.KillTimer(_hwnd, ActivateTimerId);
-        _pendingActivate = default;
+        if (HitTest(x, y) is { } li && Inside(LayoutEngine.CloseRect(li.Label), x, y))
+            return; // двойной клик по крестику — не сворачивание
 
-        if (HitTest(x, y) is not { } li)
+        if (_labelClickItem is not { } item)
             return;
+        _labelClickItem = null;
 
-        // Двойной клик по крестику — не сворачивание (первый клик уже закрыл окно)
-        if (Inside(LayoutEngine.CloseRect(li.Label), x, y))
-            return;
+        // Первый клик уже активировал окно (и развернул/оживил превью).
+        // Двойной клик возвращает фокус туда, где пользователь был.
+        if (_focusBeforeClick != default && PInvoke.IsWindow(_focusBeforeClick))
+            _switch.Activate(_focusBeforeClick);
 
-        if (li.IsStrip || Inside(li.Label, x, y))
-            _tracker.ToggleCollapsed(li.Window);
+        // Для живого тайла двойной клик — «свернуть превью в полоску»
+        if (!_labelClickWasStrip)
+            _tracker.ToggleCollapsed(item);
     }
 
     /// <summary>Ctrl+колесо над превью: постоянный zoom ×1..×5.</summary>
