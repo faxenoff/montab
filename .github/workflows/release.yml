@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  push:
+    branches: [release]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 11.0.x
+          dotnet-quality: preview
+
+      - name: Publish (NativeAOT)
+        shell: pwsh
+        run: |
+          $env:PATH += ';C:\Program Files (x86)\Microsoft Visual Studio\Installer'
+          dotnet publish montab.csproj -c Release -r win-x64
+          Get-Item bin\Release\net11.0-windows\win-x64\publish\montab.exe
+
+      # Тег/релиз v<Version из csproj>. Существующий релиз не пересоздаётся —
+      # его описание (дописанное руками) сохраняется, exe перезаливается.
+      - name: Create or update GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = ([xml](Get-Content montab.csproj)).Project.PropertyGroup.Version |
+            Where-Object { $_ } | Select-Object -First 1
+          $tag = "v$version"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --target $env:GITHUB_SHA `
+              --title "montab $version" --notes "montab $version"
+          }
+          gh release upload $tag bin\Release\net11.0-windows\win-x64\publish\montab.exe --clobber
