@@ -69,6 +69,7 @@ internal sealed unsafe class PanelWindow
     PressState _press;
     WindowItem? _pressItem;
     WindowItem? _hoverClose;
+    bool _swallowNextUp;
     int _pressX, _pressY;
 
     // Hover-лупа: наведение на превью без нажатий включает временный zoom+pan
@@ -240,6 +241,13 @@ internal sealed unsafe class PanelWindow
                 break;
 
             case PInvoke.WM_LBUTTONUP:
+                if (_swallowNextUp)
+                {
+                    // Отпускание второго клика двойного — жест уже обработан на DOWN
+                    _swallowNextUp = false;
+                    EndPress();
+                    return new LRESULT(0);
+                }
                 if (_resizing)
                 {
                     _resizing = false;
@@ -472,6 +480,20 @@ internal sealed unsafe class PanelWindow
             _press = PressState.PanelDrag;
             PInvoke.SetCapture(_hwnd);
             PInvoke.SetCursor(PInvoke.LoadCursor(default, PInvoke.IDC_SIZEALL));
+            return;
+        }
+
+        // Второй клик двойного детектируем уже по НАЖАТИЮ (до отпускания
+        // проходит ещё ~100 мс — окно ожидания успевало истечь): сворачиваем
+        // окно системно прямо здесь, а его отпускание глотаем.
+        if (_pendingLabelItem == li.Window && !li.IsStrip)
+        {
+            CancelPendingActivation();
+            _swallowNextUp = true;
+            bool wasForeground = li.Window.Hwnd == _tracker.ForegroundWindow;
+            PInvoke.ShowWindow(li.Window.Hwnd, SHOW_WINDOW_CMD.SW_SHOWMINNOACTIVE);
+            if (wasForeground)
+                _switch.ActivateMostRecentExcept(li.Window.Hwnd);
             return;
         }
 
@@ -735,18 +757,8 @@ internal sealed unsafe class PanelWindow
 
         if (!li.IsStrip)
         {
-            // Живой тайл (превью или заголовок): короткое окно ожидания второго
-            // клика. Двойной клик сворачивает окно системно (без активации
-            // соседей), полоска появится по событию MINIMIZESTART.
-            if (_pendingLabelItem == li.Window)
-            {
-                CancelPendingActivation();
-                bool wasForeground = li.Window.Hwnd == _tracker.ForegroundWindow;
-                PInvoke.ShowWindow(li.Window.Hwnd, SHOW_WINDOW_CMD.SW_SHOWMINNOACTIVE);
-                if (wasForeground)
-                    _switch.ActivateMostRecentExcept(li.Window.Hwnd);
-                return;
-            }
+            // Живой тайл: активация после короткого окна ожидания второго клика.
+            // Сам второй клик (двойной = свернуть) перехватывается в OnPress.
             _pendingLabelItem = li.Window;
             PInvoke.SetTimer(_hwnd, ActivateTimerId, LabelActivateDelayMs, null);
             return;
