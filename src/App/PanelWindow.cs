@@ -56,12 +56,16 @@ internal sealed unsafe class PanelWindow
     uint _dpi = 96;
     bool _updatingPosition;
     bool _resizing;
-    bool _swallowNextUp;
 
-    // Контекст последнего клика по заголовку/полоске — для отката при двойном клике
+    // Контекст последнего клика по заголовку/полоске: двойной клик детектируем сами —
+    // системный WM_LBUTTONDBLCLK ненадёжен, когда лента перестраивается после первого клика.
     WindowItem? _labelClickItem;
     bool _labelClickWasStrip;
     HWND _focusBeforeClick;
+    int _labelClickTick;
+    int _labelClickX, _labelClickY;
+    int _closeClickTick;
+    int _closeClickX, _closeClickY;
 
     PressState _press;
     WindowItem? _pressItem;
@@ -87,7 +91,7 @@ internal sealed unsafe class PanelWindow
             var wc = new WNDCLASSEXW
             {
                 cbSize = (uint)sizeof(WNDCLASSEXW),
-                style = WNDCLASS_STYLES.CS_HREDRAW | WNDCLASS_STYLES.CS_VREDRAW | WNDCLASS_STYLES.CS_DBLCLKS,
+                style = WNDCLASS_STYLES.CS_HREDRAW | WNDCLASS_STYLES.CS_VREDRAW,
                 lpfnWndProc = &StaticWndProc,
                 hInstance = (HINSTANCE)hInstance.Value,
                 hCursor = PInvoke.LoadCursor(default, PInvoke.IDC_ARROW),
@@ -234,13 +238,7 @@ internal sealed unsafe class PanelWindow
                 break;
 
             case PInvoke.WM_LBUTTONUP:
-                if (_swallowNextUp)
-                {
-                    // Финальный UP последовательности двойного клика — не одиночный клик.
-                    _swallowNextUp = false;
-                    EndPress();
-                }
-                else if (_resizing)
+                if (_resizing)
                 {
                     _resizing = false;
                     PInvoke.ReleaseCapture();
@@ -260,11 +258,6 @@ internal sealed unsafe class PanelWindow
                     EndPress();
                     OnClick(GetXLParam(lParam), GetYLParam(lParam), ((nint)wParam.Value & MK_CONTROL) != 0);
                 }
-                return new LRESULT(0);
-
-            case PInvoke.WM_LBUTTONDBLCLK:
-                _swallowNextUp = true;
-                OnDoubleClick(GetXLParam(lParam), GetYLParam(lParam));
                 return new LRESULT(0);
 
             case PInvoke.WM_TIMER:
@@ -695,13 +688,21 @@ internal sealed unsafe class PanelWindow
 
     void OnClick(int x, int y, bool ctrl)
     {
-        _labelClickItem = null;
-
         if (HitTest(x, y) is not { } li)
+        {
+            _labelClickItem = null;
             return;
+        }
 
         if (Inside(LayoutEngine.CloseRect(li.Label), x, y))
         {
+            // Повторный клик в зоне крестика: после закрытия лента сдвинулась,
+            // под курсором крестик чужого окна — не закрываем его случайно.
+            if (IsRepeatClick(_closeClickTick, _closeClickX, _closeClickY, x, y))
+                return;
+            _closeClickTick = Environment.TickCount;
+            _closeClickX = x;
+            _closeClickY = y;
             PInvoke.PostMessage(li.Window.Hwnd, PInvoke.WM_CLOSE, default, default);
             return;
         }
@@ -720,31 +721,41 @@ internal sealed unsafe class PanelWindow
             return;
         }
 
-        // Заголовок/полоска: активируем сразу; если придёт второй клик (dblclick),
-        // он откатит переключение фокуса, а окно/превью останутся развёрнутыми.
+        // Второй клик рядом с первым = двойной. Работаем с элементом первого клика:
+        // лента могла перестроиться, и под курсором уже другой элемент.
+        if (_labelClickItem is { } prev && IsRepeatClick(_labelClickTick, _labelClickX, _labelClickY, x, y))
+        {
+            _labelClickItem = null;
+
+            // Первый клик уже активировал окно (и развернул/оживил превью) —
+            // возвращаем фокус туда, где пользователь был.
+            if (_focusBeforeClick != default && PInvoke.IsWindow(_focusBeforeClick))
+                _switch.Activate(_focusBeforeClick);
+
+            // Для живого тайла двойной клик — «свернуть превью в полоску»
+            if (!_labelClickWasStrip)
+                _tracker.ToggleCollapsed(prev);
+            return;
+        }
+
+        // Одиночный клик по заголовку/полоске — мгновенная активация
         _labelClickItem = li.Window;
         _labelClickWasStrip = li.IsStrip;
+        _labelClickTick = Environment.TickCount;
+        _labelClickX = x;
+        _labelClickY = y;
         _focusBeforeClick = PInvoke.GetForegroundWindow();
         _switch.Activate(li.Window.Hwnd);
     }
 
-    void OnDoubleClick(int x, int y)
+    /// <summary>Второй клик того же жеста: в пределах double-click-времени (с запасом) и рядом.</summary>
+    bool IsRepeatClick(int tick, int px, int py, int x, int y)
     {
-        if (HitTest(x, y) is { } li && Inside(LayoutEngine.CloseRect(li.Label), x, y))
-            return; // двойной клик по крестику — не сворачивание
-
-        if (_labelClickItem is not { } item)
-            return;
-        _labelClickItem = null;
-
-        // Первый клик уже активировал окно (и развернул/оживил превью).
-        // Двойной клик возвращает фокус туда, где пользователь был.
-        if (_focusBeforeClick != default && PInvoke.IsWindow(_focusBeforeClick))
-            _switch.Activate(_focusBeforeClick);
-
-        // Для живого тайла двойной клик — «свернуть превью в полоску»
-        if (!_labelClickWasStrip)
-            _tracker.ToggleCollapsed(item);
+        int elapsed = Environment.TickCount - tick;
+        if (elapsed < 0 || elapsed > (int)PInvoke.GetDoubleClickTime() + 150)
+            return false;
+        int radius = Scale(16);
+        return Math.Abs(x - px) <= radius && Math.Abs(y - py) <= radius;
     }
 
     /// <summary>Ctrl+колесо над превью: постоянный zoom ×1..×5.</summary>
