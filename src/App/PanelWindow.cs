@@ -33,7 +33,7 @@ internal sealed unsafe class PanelWindow
     const nuint ActivateTimerId = 1;
     const nuint HoverZoomTimerId = 2;
     /// <summary>Окно ожидания второго клика по живому тайлу.</summary>
-    const uint LabelActivateDelayMs = 200;
+    const uint LabelActivateDelayMs = 150;
     const uint HoverZoomDelayMs = 700;
     const double HoverZoomFactor = 5.0;
     const nint MK_CONTROL = 0x0008;
