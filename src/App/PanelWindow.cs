@@ -758,12 +758,15 @@ internal sealed unsafe class PanelWindow
         if (!li.IsStrip)
         {
             // Заголовок живого тайла: короткое окно ожидания второго клика.
-            // Двойной клик сворачивает превью, вообще не трогая фокус —
-            // без мигающего переключения в приложение между кликами.
+            // Двойной клик сворачивает окно системно (без активации соседей),
+            // полоска появится по событию MINIMIZESTART.
             if (_pendingLabelItem == li.Window)
             {
                 CancelPendingActivation();
-                _tracker.ToggleCollapsed(li.Window);
+                bool wasForeground = li.Window.Hwnd == _tracker.ForegroundWindow;
+                PInvoke.ShowWindow(li.Window.Hwnd, SHOW_WINDOW_CMD.SW_SHOWMINNOACTIVE);
+                if (wasForeground)
+                    _switch.ActivateMostRecentExcept(li.Window.Hwnd);
                 return;
             }
             _pendingLabelItem = li.Window;

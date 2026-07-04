@@ -223,8 +223,6 @@ internal sealed unsafe class WindowTracker : IDisposable
         _items.Insert(StripBoundary(), item);
     }
 
-    public void ToggleCollapsed(WindowItem item) => SetCollapsed(item, !item.IsCollapsed);
-
     public void SetCollapsed(WindowItem item, bool collapsed)
     {
         if (item.IsCollapsed == collapsed)
