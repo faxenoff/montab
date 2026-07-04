@@ -70,20 +70,10 @@ New-ItemProperty 'HKCU:\Software\Policies\Microsoft\Edge' `
   -Name WindowOcclusionEnabled -Value 0 -PropertyType DWord -Force | Out-Null
 ```
 
-(Старая политика `NativeWindowOcclusionEnabled` устарела и удалена из
-Chromium — показывается как «Unknown policy»; `WindowOcclusionEnabled` — её
-замена.)
-
-Проверить, что политика применилась: `brave://policy` (или `chrome://policy`,
-`edge://policy`) — там должна появиться `WindowOcclusionEnabled: 0` без ошибок.
-Откат — удалить значение:
-`Remove-ItemProperty 'HKCU:\Software\Policies\BraveSoftware\Brave' -Name WindowOcclusionEnabled`.
-
 Альтернатива без реестра — ключи в ярлыке браузера:
 `--disable-features=CalculateNativeWinOcclusion --disable-backgrounding-occluded-windows`.
 
-Цена: полностью перекрытый браузер продолжает тратить GPU/CPU на отрисовку.
-На свёрнутые окна не влияет (они в панели и так полоски).
+Цена: полностью перекрытый браузер продолжает тратить GPU/CPU на отрисовку. На свёрнутые окна не влияет (они в панели и так полоски).
 
 ## Сборка
 

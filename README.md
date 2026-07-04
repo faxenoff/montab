@@ -69,20 +69,10 @@ New-ItemProperty 'HKCU:\Software\Policies\Microsoft\Edge' `
   -Name WindowOcclusionEnabled -Value 0 -PropertyType DWord -Force | Out-Null
 ```
 
-(The older `NativeWindowOcclusionEnabled` policy is deprecated/removed from
-Chromium and shows up as "Unknown policy" — `WindowOcclusionEnabled` is its
-replacement.)
-
-Verify it took effect at `brave://policy` (or `chrome://policy`,
-`edge://policy`) — `WindowOcclusionEnabled: 0` should be listed without errors.
-To roll back, delete the value:
-`Remove-ItemProperty 'HKCU:\Software\Policies\BraveSoftware\Brave' -Name WindowOcclusionEnabled`.
-
 Registry-free alternative — launch flags in the browser shortcut:
 `--disable-features=CalculateNativeWinOcclusion --disable-backgrounding-occluded-windows`.
 
-The cost: a fully covered browser keeps spending GPU/CPU on rendering.
-Minimized windows are unaffected (they are strips in the panel anyway).
+The cost: a fully covered browser keeps spending GPU/CPU on rendering. Minimized windows are unaffected (they are strips in the panel anyway).
 
 ## Building
 
