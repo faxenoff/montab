@@ -26,18 +26,13 @@ internal sealed unsafe class ScrollBarWindow
     const int WidthLogical = 14;
     const int MinThumbLogical = 24;
 
-    // Композиция UpdateLayeredWindow: dst = src + dst×(1−srcA). Пиксель с A=0 и
-    // ненулевым цветом даёт чистое аддитивное наложение (linear dodge) — тёмный
-    // фон высветляется в серый, светлый почти не меняется, цвета не «серятся».
-    static readonly uint TrackPixel = Additive(24);
-    static readonly uint ThumbBodyPixel = Additive(80);
-    static readonly uint ThumbBodyDragPixel = Additive(115);
-    // Кайма — обычная полупрозрачность: страхует видимость бегунка на белом,
-    // где аддитивная добавка исчезает.
-    static readonly uint ThumbBorderPixel = Premultiply(170, 20);
-
-    /// <summary>Аддитивный серый пиксель: A=0, цвет прибавляется к фону.</summary>
-    static uint Additive(byte value) => ((uint)value << 16) | ((uint)value << 8) | value;
+    // Классический полупрозрачный серый бегунок; «серость» сокращена точечно:
+    // трек почти прозрачен (вуаль на всю высоту и была главной грязью),
+    // тело бегунка — умеренная альфа, тёмная кайма держит контур на светлом.
+    static readonly uint TrackPixel = Premultiply(36, 30);
+    static readonly uint ThumbBodyPixel = Premultiply(150, 200);
+    static readonly uint ThumbBodyDragPixel = Premultiply(200, 220);
+    static readonly uint ThumbBorderPixel = Premultiply(160, 25);
 
     /// <summary>Premultiplied-пиксель серого цвета: value × alpha в каждом канале.</summary>
     static uint Premultiply(byte alpha, byte value)
