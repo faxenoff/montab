@@ -5,6 +5,7 @@ using Montab.App;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.Gdi;
+using Windows.Win32.UI.Input.KeyboardAndMouse;
 using Windows.Win32.UI.WindowsAndMessaging;
 
 namespace Montab.UI;
@@ -13,30 +14,41 @@ namespace Montab.UI;
 /// Полупрозрачный оверлей-скроллбар для трекпадов (клик-драг вместо колеса).
 /// Отдельное layered owned-popup-окно: DWM компонует превью поверх окна панели
 /// (включая её child-окна), а owned-окно в z-order всегда выше владельца —
-/// значит, и выше всех превью. Показывается, только когда лента переполнена
-/// и курсор над панелью. Зона крестиков «дырявая» (HTTRANSPARENT) —
-/// клик по ✕ проходит сквозь скроллбар в панель.
+/// значит, и выше всех превью. Per-pixel alpha (UpdateLayeredWindow): трек —
+/// едва заметное чёрное затемнение, бегунок — плотный тёмный; серой «вуали»
+/// поверх превью нет. Показывается, только когда лента переполнена и курсор
+/// над панелью. Зона крестиков «дырявая» (HTTRANSPARENT) — клик по ✕ проходит
+/// сквозь скроллбар в панель.
 /// </summary>
 internal sealed unsafe class ScrollBarWindow
 {
     const string ClassName = "montab.scrollbar";
     const int WidthLogical = 14;
     const int MinThumbLogical = 24;
-    const byte Alpha = 150;
+
+    // Premultiplied BGRA; чёрный цвет — все цветовые каналы нулевые
+    const uint TrackPixel = 46u << 24;      // ~18% затемнение
+    const uint ThumbPixel = 168u << 24;     // ~66%
+    const uint ThumbDragPixel = 208u << 24; // ~82% во время драга
 
     static ScrollBarWindow? s_instance;
-    static readonly HBRUSH TrackBrush = PInvoke.CreateSolidBrush(new COLORREF(0x00181818));
-    static readonly HBRUSH ThumbBrush = PInvoke.CreateSolidBrush(new COLORREF(0x00909090));
-    static readonly HBRUSH ThumbDragBrush = PInvoke.CreateSolidBrush(new COLORREF(0x00C0C0C0));
 
     readonly PanelWindow _panel;
     readonly HWND _hwnd;
 
     int _totalHeight, _viewportHeight, _scrollOffset;
     int _minThumbPx = 24;
+    int _width, _height;
     bool _visible;
     bool _dragging;
     int _dragAnchor; // расстояние от точки захвата до верха бегунка
+
+    // Кешированная 32bpp-поверхность для UpdateLayeredWindow
+    HDC _dibDc;
+    HBITMAP _dib;
+    HGDIOBJ _dibOld;
+    uint* _bits;
+    int _surfaceWidth, _surfaceHeight;
 
     public ScrollBarWindow(PanelWindow panel, HWND parent, HINSTANCE hInstance)
     {
@@ -60,33 +72,33 @@ internal sealed unsafe class ScrollBarWindow
             WINDOW_EX_STYLE.WS_EX_LAYERED | WINDOW_EX_STYLE.WS_EX_NOACTIVATE | WINDOW_EX_STYLE.WS_EX_TOOLWINDOW,
             ClassName, null, WINDOW_STYLE.WS_POPUP,
             0, 0, 0, 0, parent, default, hInstance, null);
-
-        PInvoke.SetLayeredWindowAttributes(_hwnd, default, Alpha, LAYERED_WINDOW_ATTRIBUTES_FLAGS.LWA_ALPHA);
     }
 
     /// <summary>Полоса у внешнего края панели (экранные координаты), от «ручки» до низа.</summary>
     public void Layout(RECT panelScreen, uint dpi, bool dockRight, int topOffset)
     {
-        int width = LayoutEngine.Scale(WidthLogical, dpi);
+        _width = LayoutEngine.Scale(WidthLogical, dpi);
         _minThumbPx = LayoutEngine.Scale(MinThumbLogical, dpi);
-        int x = dockRight ? panelScreen.right - width : panelScreen.left;
+        int x = dockRight ? panelScreen.right - _width : panelScreen.left;
         int y = panelScreen.top + topOffset;
-        PInvoke.SetWindowPos(_hwnd, default, x, y, width, panelScreen.bottom - y,
+        _height = panelScreen.bottom - y;
+        PInvoke.SetWindowPos(_hwnd, default, x, y, _width, _height,
             SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE | SET_WINDOW_POS_FLAGS.SWP_NOZORDER);
+        if (_visible)
+            Redraw();
     }
 
     /// <summary>Синхронизация с лентой; вызывается панелью после пересчёта раскладки.</summary>
     public void Update(int totalHeight, int viewportHeight, int scrollOffset, bool pointerNearby)
     {
-        if (totalHeight != _totalHeight || viewportHeight != _viewportHeight || scrollOffset != _scrollOffset)
-        {
-            _totalHeight = totalHeight;
-            _viewportHeight = viewportHeight;
-            _scrollOffset = scrollOffset;
-            if (_visible)
-                PInvoke.InvalidateRect(_hwnd, null, true);
-        }
+        bool changed = totalHeight != _totalHeight || viewportHeight != _viewportHeight || scrollOffset != _scrollOffset;
+        _totalHeight = totalHeight;
+        _viewportHeight = viewportHeight;
+        _scrollOffset = scrollOffset;
+
         UpdateVisibility(pointerNearby);
+        if (changed && _visible)
+            Redraw();
     }
 
     public void UpdateVisibility(bool pointerNearby)
@@ -95,9 +107,9 @@ internal sealed unsafe class ScrollBarWindow
         if (want == _visible)
             return;
         _visible = want;
-        PInvoke.ShowWindow(_hwnd, want ? SHOW_WINDOW_CMD.SW_SHOWNOACTIVATE : SHOW_WINDOW_CMD.SW_HIDE);
         if (want)
-            PInvoke.InvalidateRect(_hwnd, null, true);
+            Redraw();
+        PInvoke.ShowWindow(_hwnd, want ? SHOW_WINDOW_CMD.SW_SHOWNOACTIVATE : SHOW_WINDOW_CMD.SW_HIDE);
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]
@@ -132,39 +144,38 @@ internal sealed unsafe class ScrollBarWindow
             case PInvoke.WM_MOUSEACTIVATE:
                 return new LRESULT((nint)PInvoke.MA_NOACTIVATE);
 
-            case PInvoke.WM_PAINT:
-                Paint(hwnd);
-                return new LRESULT(0);
-
             case PInvoke.WM_LBUTTONDOWN:
             {
                 int y = (short)((lParam.Value >> 16) & 0xFFFF);
-                var (thumbTop, thumbHeight, trackHeight) = ThumbMetrics(hwnd);
+                var (thumbTop, thumbHeight) = ThumbMetrics();
                 // По бегунку — тащим от точки захвата; по треку — телепорт центром
                 _dragAnchor = (y >= thumbTop && y < thumbTop + thumbHeight) ? y - thumbTop : thumbHeight / 2;
                 _dragging = true;
                 PInvoke.SetCapture(hwnd);
-                DragTo(y, thumbHeight, trackHeight);
+                DragTo(y, thumbHeight);
+                Redraw();
                 return new LRESULT(0);
             }
 
             case PInvoke.WM_MOUSEMOVE:
+            {
                 if (_dragging)
                 {
                     int y = (short)((lParam.Value >> 16) & 0xFFFF);
-                    var (_, thumbHeight, trackHeight) = ThumbMetrics(hwnd);
-                    DragTo(y, thumbHeight, trackHeight);
+                    var (_, thumbHeight) = ThumbMetrics();
+                    DragTo(y, thumbHeight);
                 }
                 _panel.PointerSeen();
                 // Иначе не узнаем, что мышь ушла со скроллбара за пределы панели
-                var tme = new Windows.Win32.UI.Input.KeyboardAndMouse.TRACKMOUSEEVENT
+                var tme = new TRACKMOUSEEVENT
                 {
-                    cbSize = (uint)sizeof(Windows.Win32.UI.Input.KeyboardAndMouse.TRACKMOUSEEVENT),
-                    dwFlags = Windows.Win32.UI.Input.KeyboardAndMouse.TRACKMOUSEEVENT_FLAGS.TME_LEAVE,
+                    cbSize = (uint)sizeof(TRACKMOUSEEVENT),
+                    dwFlags = TRACKMOUSEEVENT_FLAGS.TME_LEAVE,
                     hwndTrack = hwnd,
                 };
                 PInvoke.TrackMouseEvent(ref tme);
                 return new LRESULT(0);
+            }
 
             case PInvoke.WM_MOUSELEAVE:
                 _panel.PointerMaybeGone();
@@ -177,6 +188,7 @@ internal sealed unsafe class ScrollBarWindow
                     _dragging = false;
                     if (msg == PInvoke.WM_LBUTTONUP)
                         PInvoke.ReleaseCapture();
+                    Redraw();
                     _panel.PointerMaybeGone(); // курсор мог уйти с панели во время драга
                 }
                 return new LRESULT(0);
@@ -185,42 +197,95 @@ internal sealed unsafe class ScrollBarWindow
         return PInvoke.DefWindowProc(hwnd, msg, wParam, lParam);
     }
 
-    void DragTo(int y, int thumbHeight, int trackHeight)
+    void DragTo(int y, int thumbHeight)
     {
-        int span = trackHeight - thumbHeight;
+        int span = _height - thumbHeight;
         if (span <= 0)
             return;
         double frac = Math.Clamp((y - _dragAnchor) / (double)span, 0.0, 1.0);
         _panel.SetScrollOffset((int)Math.Round(frac * (_totalHeight - _viewportHeight)));
     }
 
-    (int Top, int Height, int Track) ThumbMetrics(HWND hwnd)
+    (int Top, int Height) ThumbMetrics()
     {
-        PInvoke.GetClientRect(hwnd, out RECT rc);
-        int track = rc.bottom - rc.top;
-        if (_totalHeight <= _viewportHeight || track <= 0)
-            return (0, track, track);
+        if (_totalHeight <= _viewportHeight || _height <= 0)
+            return (0, _height);
 
-        int height = Math.Clamp((int)((long)track * _viewportHeight / _totalHeight), Math.Min(_minThumbPx, track), track);
-        int top = (int)((long)(track - height) * _scrollOffset / (_totalHeight - _viewportHeight));
-        return (top, height, track);
+        int height = Math.Clamp((int)((long)_height * _viewportHeight / _totalHeight), Math.Min(_minThumbPx, _height), _height);
+        int top = (int)((long)(_height - height) * _scrollOffset / (_totalHeight - _viewportHeight));
+        return (top, height);
     }
 
-    void Paint(HWND hwnd)
+    /// <summary>Перерисовка per-pixel-alpha поверхности и подача её в композитор.</summary>
+    void Redraw()
     {
-        HDC hdc = PInvoke.BeginPaint(hwnd, out PAINTSTRUCT ps);
-        try
-        {
-            PInvoke.GetClientRect(hwnd, out RECT rc);
-            PInvoke.FillRect(hdc, in rc, TrackBrush);
+        if (_width <= 0 || _height <= 0)
+            return;
+        EnsureSurface();
 
-            var (top, height, _) = ThumbMetrics(hwnd);
-            var thumb = new RECT { left = rc.left, top = top, right = rc.right, bottom = top + height };
-            PInvoke.FillRect(hdc, in thumb, _dragging ? ThumbDragBrush : ThumbBrush);
-        }
-        finally
+        uint thumbPixel = _dragging ? ThumbDragPixel : ThumbPixel;
+        var (thumbTop, thumbHeight) = ThumbMetrics();
+
+        uint* px = _bits;
+        int total = _width * _height;
+        for (int i = 0; i < total; i++)
+            px[i] = TrackPixel;
+        for (int y = thumbTop; y < thumbTop + thumbHeight && y < _height; y++)
         {
-            PInvoke.EndPaint(hwnd, in ps);
+            uint* row = _bits + (long)y * _width;
+            for (int x = 0; x < _width; x++)
+                row[x] = thumbPixel;
         }
+
+        var size = new SIZE { cx = _width, cy = _height };
+        var srcPoint = new System.Drawing.Point(0, 0);
+        var blend = new BLENDFUNCTION
+        {
+            BlendOp = (byte)PInvoke.AC_SRC_OVER,
+            SourceConstantAlpha = 255,
+            AlphaFormat = (byte)PInvoke.AC_SRC_ALPHA,
+        };
+        PInvoke.UpdateLayeredWindow(_hwnd, default, null, &size, _dibDc, &srcPoint,
+            default, &blend, UPDATE_LAYERED_WINDOW_FLAGS.ULW_ALPHA);
+    }
+
+    void EnsureSurface()
+    {
+        if (_dibDc != default && _surfaceWidth == _width && _surfaceHeight == _height)
+            return;
+
+        DestroySurface();
+
+        var bmi = new BITMAPINFO
+        {
+            bmiHeader = new BITMAPINFOHEADER
+            {
+                biSize = (uint)sizeof(BITMAPINFOHEADER),
+                biWidth = _width,
+                biHeight = -_height, // top-down
+                biPlanes = 1,
+                biBitCount = 32,
+                biCompression = 0, // BI_RGB
+            },
+        };
+
+        void* bits;
+        _dib = PInvoke.CreateDIBSection(default, &bmi, DIB_USAGE.DIB_RGB_COLORS, &bits, default, 0);
+        _bits = (uint*)bits;
+        _dibDc = PInvoke.CreateCompatibleDC(default);
+        _dibOld = PInvoke.SelectObject(_dibDc, (HGDIOBJ)_dib.Value);
+        _surfaceWidth = _width;
+        _surfaceHeight = _height;
+    }
+
+    void DestroySurface()
+    {
+        if (_dibDc == default)
+            return;
+        PInvoke.SelectObject(_dibDc, _dibOld);
+        PInvoke.DeleteObject((HGDIOBJ)_dib.Value);
+        PInvoke.DeleteDC(_dibDc);
+        _dibDc = default;
+        _bits = null;
     }
 }

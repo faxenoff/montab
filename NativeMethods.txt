@@ -50,8 +50,11 @@ GetWindowRect
 LoadCursorW
 SetCursor
 
-// scrollbar overlay (layered child)
-SetLayeredWindowAttributes
+// scrollbar overlay (layered popup, per-pixel alpha)
+UpdateLayeredWindow
+CreateDIBSection
+AC_SRC_OVER
+AC_SRC_ALPHA
 WM_NCHITTEST
 HTTRANSPARENT
 WM_MOUSEACTIVATE
