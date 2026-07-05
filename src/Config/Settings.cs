@@ -16,7 +16,8 @@ internal sealed class Settings
     public string? Monitor { get; set; }
 
     public const double MinWidthPercent = 3;
-    public const double MaxWidthPercent = 20;
+    // До половины экрана: на вертикальных мониторах широкую панель реально используют
+    public const double MaxWidthPercent = 50;
 
     static string Dir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "montab");

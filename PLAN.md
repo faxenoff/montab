@@ -143,7 +143,7 @@ system minimize.
 
 ### Layout
 
-- Panel width: clamped to **3–20%** of monitor width, resized by the inner edge.
+- Panel width: clamped to **3–50%** of monitor width, resized by the inner edge.
 - A "handle" at the top of the panel (14 logical px, grip dots) moves the panel.
 - Live tile: label (18 logical px: icon + title + ✕) above the preview;
   preview height = width/aspect with clamping; the DWM rectangle is centered
@@ -247,5 +247,5 @@ system minimize.
 - Previews update at the source's own rate with no visible latency. ✓
 - Aspect ratio, gaps, click-to-switch, double-click-to-minimize, drag-reorder,
   two-section list, scrolling + virtualization, ×5 hover magnifier and ×1–5
-  Ctrl zoom, active highlight, 3–20% dock, cross-monitor moves, PMv2 DPI,
+  Ctrl zoom, active highlight, 3–50% dock, cross-monitor moves, PMv2 DPI,
   autostart, settings persistence. ✓

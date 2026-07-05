@@ -40,7 +40,7 @@ private memory, ~0% CPU when idle.
 | Ctrl + click | Reset zoom/pan |
 | Drag a preview | Reorder (within its own section; the dragged item is highlighted) |
 | Drag the top handle or empty area | Move the panel to another monitor/edge (edge picked by monitor half) |
-| Drag the inner edge | Panel width (3–20% of monitor width) |
+| Drag the inner edge | Panel width (3–50% of monitor width) |
 | Right click | Menu: dock edge, autostart, exit |
 
 ## Browser preview freezes?
