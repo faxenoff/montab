@@ -32,7 +32,7 @@ internal sealed unsafe class ScrollBarWindow
     static readonly uint TrackPixel = Premultiply(36, 30);
     static readonly uint ThumbBodyPixel = Premultiply(150, 200);
     static readonly uint ThumbBodyDragPixel = Premultiply(200, 220);
-    static readonly uint ThumbBorderPixel = Premultiply(160, 25);
+    static readonly uint ThumbBorderPixel = Premultiply(90, 55); // мягкий контур, без резкого контраста
 
     /// <summary>Premultiplied-пиксель серого цвета: value × alpha в каждом канале.</summary>
     static uint Premultiply(byte alpha, byte value)
