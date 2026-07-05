@@ -62,6 +62,8 @@ internal sealed unsafe class PanelWindow
     HWND _hwnd;
     AppBar? _appBar;
     ThumbnailManager? _thumbs;
+    ScrollBarWindow? _scrollbar;
+    bool _pointerNearby;
     bool _updatingPosition;
     bool _resizing;
 
@@ -123,6 +125,7 @@ internal sealed unsafe class PanelWindow
             throw new InvalidOperationException("CreateWindowExW failed");
 
         SetDpi(PInvoke.GetDpiForWindow(_hwnd));
+        _scrollbar = new ScrollBarWindow(this, _hwnd, (HINSTANCE)hInstance.Value);
         _appBar = new AppBar(_hwnd, PInvoke.RegisterWindowMessage("montab.appbar"));
         _appBar.Register();
         UpdatePosition();
@@ -190,6 +193,7 @@ internal sealed unsafe class PanelWindow
                 _thumbs?.Sync(_layoutItems, client, _tracker.ForegroundWindow);
                 _renderer.Paint(hwnd, _layoutItems, _tracker.ForegroundWindow, _dpi, _hoverClose,
                     _press == PressState.Dragging ? _pressItem : null);
+                _scrollbar?.Update(_layout.TotalHeight, client.bottom - client.top, _scrollOffset, _pointerNearby);
                 return new LRESULT(0);
 
             case PInvoke.WM_MOUSEWHEEL:
@@ -240,6 +244,7 @@ internal sealed unsafe class PanelWindow
                 return new LRESULT(0);
 
             case PInvoke.WM_MOUSEMOVE:
+                PointerSeen();
                 if (_resizing)
                 {
                     PInvoke.GetCursorPos(out System.Drawing.Point screen);
@@ -299,6 +304,7 @@ internal sealed unsafe class PanelWindow
 
             case PInvoke.WM_MOUSELEAVE:
                 CancelHoverZoom();
+                PointerMaybeGone();
                 if (_hoverClose is not null)
                 {
                     _hoverClose = null;
@@ -372,6 +378,7 @@ internal sealed unsafe class PanelWindow
                 rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top,
                 SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE);
             SetDpi(PInvoke.GetDpiForWindow(_hwnd));
+            _scrollbar?.Layout(rc, _dpi, _settings.Edge == DockEdge.Right, _headerPx);
         }
         finally
         {
@@ -459,10 +466,11 @@ internal sealed unsafe class PanelWindow
         _wheelStepPx = LayoutEngine.Scale(60, dpi); // px за один щелчок колеса
     }
 
-    void Scroll(int wheelDelta)
-    {
-        int offset = _scrollOffset + wheelDelta * _wheelStepPx / 120;
+    void Scroll(int wheelDelta) => SetScrollOffset(_scrollOffset + wheelDelta * _wheelStepPx / 120);
 
+    /// <summary>Абсолютный скролл ленты (колесо и драг скроллбара).</summary>
+    internal void SetScrollOffset(int offset)
+    {
         PInvoke.GetClientRect(_hwnd, out RECT client);
         int maxScroll = Math.Max(0, _layout.TotalHeight - (client.bottom - client.top));
         offset = Math.Clamp(offset, 0, maxScroll);
@@ -472,6 +480,32 @@ internal sealed unsafe class PanelWindow
         CancelHoverZoom(); // лента уезжает из-под курсора
         _scrollOffset = offset;
         PInvoke.InvalidateRect(_hwnd, null, false);
+    }
+
+    /// <summary>Клик по этой точке панели попадает в крестик закрытия?</summary>
+    internal bool IsOverCloseButton(int x, int y)
+        => HitTest(x, y) is { } li && Inside(LayoutEngine.CloseRect(li.Label), x, y);
+
+    /// <summary>Курсор над панелью (или её скроллбаром) — показать скроллбар.</summary>
+    internal void PointerSeen()
+    {
+        if (_pointerNearby)
+            return;
+        _pointerNearby = true;
+        _scrollbar?.UpdateVisibility(true);
+    }
+
+    /// <summary>Похоже, курсор ушёл; скрываем скроллбар, только если он вне окна панели.</summary>
+    internal void PointerMaybeGone()
+    {
+        if (!_pointerNearby)
+            return;
+        PInvoke.GetCursorPos(out System.Drawing.Point pt);
+        PInvoke.GetWindowRect(_hwnd, out RECT wnd);
+        if (pt.X >= wnd.left && pt.X < wnd.right && pt.Y >= wnd.top && pt.Y < wnd.bottom)
+            return;
+        _pointerNearby = false;
+        _scrollbar?.UpdateVisibility(false);
     }
 
     static int GetXLParam(LPARAM lParam) => (short)(lParam.Value & 0xFFFF);

@@ -45,8 +45,17 @@ SetCapture
 ReleaseCapture
 GetCursorPos
 ScreenToClient
+ClientToScreen
+GetWindowRect
 LoadCursorW
 SetCursor
+
+// scrollbar overlay (layered child)
+SetLayeredWindowAttributes
+WM_NCHITTEST
+HTTRANSPARENT
+WM_MOUSEACTIVATE
+MA_NOACTIVATE
 IDC_ARROW
 IDC_SIZEWE
 IDC_SIZENS

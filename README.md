@@ -33,6 +33,7 @@ private memory, ~0% CPU when idle.
 | Double-click a live preview (anywhere) | Minimize the window (real system minimize) into a strip |
 | Click ✕ in the title bar | Close the application |
 | Mouse wheel | Scroll the list |
+| Drag the overlay scrollbar | Trackpad-friendly scrolling; the wide translucent bar appears at the outer edge on hover when the list overflows. ✕ buttons stay clickable through it |
 | Hover over a preview (~0.7 s) | Temporary ×5 magnifier; mouse movement pans; leaving the preview restores |
 | Ctrl + wheel over a preview | Persistent zoom ×1–5 |
 | Ctrl + mouse move | Pan the zoomed preview |

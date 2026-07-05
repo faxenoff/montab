@@ -151,6 +151,11 @@ system minimize.
 - Strip: 22 logical px, icon + title + ✕.
 - Gap 6 logical px; all sizes precomputed for the panel monitor's DPI.
 - Wheel scrolling, clamped to total height.
+- Overlay scrollbar for trackpads: a translucent layered owned-popup window
+  (owned windows sit above their owner in z-order — i.e. above the DWM
+  previews, which composite over the panel's own GDI and its child windows).
+  Appears on hover when the list overflows; thumb drag / track teleport;
+  the close-button zones return HTTRANSPARENT so ✕ clicks pass through.
 
 ### Window switching (final semantics)
 
