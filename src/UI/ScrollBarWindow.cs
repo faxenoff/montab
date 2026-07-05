@@ -26,10 +26,25 @@ internal sealed unsafe class ScrollBarWindow
     const int WidthLogical = 14;
     const int MinThumbLogical = 24;
 
-    // Premultiplied BGRA; чёрный цвет — все цветовые каналы нулевые
-    const uint TrackPixel = 46u << 24;      // ~18% затемнение
-    const uint ThumbPixel = 168u << 24;     // ~66%
-    const uint ThumbDragPixel = 208u << 24; // ~82% во время драга
+    // Композиция UpdateLayeredWindow: dst = src + dst×(1−srcA). Пиксель с A=0 и
+    // ненулевым цветом даёт чистое аддитивное наложение (linear dodge) — тёмный
+    // фон высветляется в серый, светлый почти не меняется, цвета не «серятся».
+    static readonly uint TrackPixel = Additive(24);
+    static readonly uint ThumbBodyPixel = Additive(80);
+    static readonly uint ThumbBodyDragPixel = Additive(115);
+    // Кайма — обычная полупрозрачность: страхует видимость бегунка на белом,
+    // где аддитивная добавка исчезает.
+    static readonly uint ThumbBorderPixel = Premultiply(170, 20);
+
+    /// <summary>Аддитивный серый пиксель: A=0, цвет прибавляется к фону.</summary>
+    static uint Additive(byte value) => ((uint)value << 16) | ((uint)value << 8) | value;
+
+    /// <summary>Premultiplied-пиксель серого цвета: value × alpha в каждом канале.</summary>
+    static uint Premultiply(byte alpha, byte value)
+    {
+        uint c = (uint)(value * alpha / 255);
+        return ((uint)alpha << 24) | (c << 16) | (c << 8) | c;
+    }
 
     static ScrollBarWindow? s_instance;
 
@@ -223,18 +238,24 @@ internal sealed unsafe class ScrollBarWindow
             return;
         EnsureSurface();
 
-        uint thumbPixel = _dragging ? ThumbDragPixel : ThumbPixel;
+        uint bodyPixel = _dragging ? ThumbBodyDragPixel : ThumbBodyPixel;
         var (thumbTop, thumbHeight) = ThumbMetrics();
+        int border = Math.Max(1, _width / 12); // тёмная кайма бегунка
+        int thumbBottom = Math.Min(thumbTop + thumbHeight, _height);
 
         uint* px = _bits;
         int total = _width * _height;
         for (int i = 0; i < total; i++)
             px[i] = TrackPixel;
-        for (int y = thumbTop; y < thumbTop + thumbHeight && y < _height; y++)
+        for (int y = thumbTop; y < thumbBottom; y++)
         {
+            bool edgeRow = y < thumbTop + border || y >= thumbBottom - border;
             uint* row = _bits + (long)y * _width;
             for (int x = 0; x < _width; x++)
-                row[x] = thumbPixel;
+            {
+                bool edgeCol = x < border || x >= _width - border;
+                row[x] = edgeRow || edgeCol ? ThumbBorderPixel : bodyPixel;
+            }
         }
 
         var size = new SIZE { cx = _width, cy = _height };
