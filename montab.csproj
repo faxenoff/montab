@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <Version>1.0.0</Version>
+    <Version>1.0.1</Version>
     <TargetFramework>net11.0-windows</TargetFramework>
     <!-- C# 15 (preview, ставится вместе с .NET 11 preview SDK) -->
     <LangVersion>preview</LangVersion>
