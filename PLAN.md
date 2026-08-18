@@ -3,7 +3,7 @@
 # montab — architecture and final requirements (as built)
 
 > Status: fully implemented, see README for user-facing documentation.
-> Actual metrics: single exe **2.04 MB** (NativeAOT, aggressive trimming),
+> Actual metrics: single exe **~2.1 MB** (NativeAOT, aggressive trimming),
 > ~5 MB private memory with two panels, ~0% CPU when idle, zero allocations in
 > a steady frame.
 > Platform: `net11.0-windows` (preview) + C# 15.
@@ -310,7 +310,7 @@ system minimize.
 
 ## 5. Acceptance criteria — actual
 
-- Single exe (NativeAOT) **2.04 MB**, zero external dependencies. ✓
+- Single exe (NativeAOT) **~2.1 MB**, zero external dependencies. ✓
 - ~5 MB private memory (two panels); CPU ≈ 0% idle; GPU — DWM composition
   only. ✓
 - Previews update at the source's own rate with no visible latency. ✓
