@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <Version>1.0.1</Version>
+    <Version>1.1.0</Version>
     <TargetFramework>net11.0-windows</TargetFramework>
     <!-- C# 15 (preview, ставится вместе с .NET 11 preview SDK) -->
     <LangVersion>preview</LangVersion>
@@ -14,6 +14,8 @@
     <PlatformTarget>x64</PlatformTarget>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Иконка exe и трея (генерируется tools/make-icon.ps1 из assets/tray.svg) -->
+    <ApplicationIcon>assets\montab.ico</ApplicationIcon>
     <PublishAot>true</PublishAot>
     <InvariantGlobalization>true</InvariantGlobalization>
     <TrimMode>full</TrimMode>

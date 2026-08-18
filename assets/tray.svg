@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <title>montab</title>
+  <!-- Экран с работающей панелью: большое окно слева, лента из четырёх табов справа -->
+  <rect x="2" y="3.5" width="28" height="21" rx="2.6" fill="#1B1F24" stroke="#9AA0A6" stroke-width="1.6"/>
+
+  <!-- Подставка монитора -->
+  <rect x="13.4" y="24.5" width="5.2" height="2.6" fill="#9AA0A6"/>
+  <rect x="9.4" y="26.6" width="13.2" height="2" rx="1" fill="#9AA0A6"/>
+
+  <!-- Активное окно -->
+  <rect x="5" y="6.4" width="13.4" height="15.2" rx="1.2" fill="#3FA9F5"/>
+
+  <!-- Лента превью: второй таб — активный -->
+  <rect x="20.2" y="6.4"  width="6.6" height="3" rx="0.9" fill="#6B7176"/>
+  <rect x="20.2" y="10.4" width="6.6" height="3" rx="0.9" fill="#3FA9F5"/>
+  <rect x="20.2" y="14.4" width="6.6" height="3" rx="0.9" fill="#6B7176"/>
+  <rect x="20.2" y="18.4" width="6.6" height="3" rx="0.9" fill="#6B7176"/>
+</svg>

@@ -1,4 +1,5 @@
 using Windows.Win32.Foundation;
+using Windows.Win32.Graphics.Gdi;
 using Windows.Win32.UI.WindowsAndMessaging;
 
 namespace Montab.Core;
@@ -10,6 +11,9 @@ internal sealed class WindowItem
     public string Title = "";
     public HICON Icon;
     public bool OwnsIcon;
+
+    /// <summary>Монитор, на котором сейчас окно — определяет панель, где оно показано.</summary>
+    public HMONITOR Monitor;
 
     /// <summary>Свёрнуто системно — в ленте отображается полоской.</summary>
     public bool IsMinimized;

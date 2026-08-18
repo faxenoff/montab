@@ -3,7 +3,8 @@
 **EN** | [RU](README_RU.md)
 
 A Windows sidebar taskbar with **always-on live previews** of every open
-window. Docks to the left or right edge, reserves the work area (maximized
+window. One panel per monitor, each listing only the windows living on it.
+Docks to the left or right edge, reserves the work area (maximized
 windows never overlap the panel), previews update in real time straight from
 the DWM compositor — practically free in terms of resources.
 
@@ -12,7 +13,10 @@ private memory, ~0% CPU when idle.
 
 ## Features
 
-- Live previews of all windows from all monitors, aspect ratio preserved.
+- A panel on every monitor, listing only that monitor's windows (drag a window
+  to the next screen and its tile follows). Any panel can be turned off from
+  the tray.
+- Live previews, aspect ratio preserved.
 - Two-section list: live previews on top (new windows go to the very top),
   minimized windows below as compact strips with an icon and title.
   A window that gets minimized becomes the first strip; a restored one
@@ -21,8 +25,11 @@ private memory, ~0% CPU when idle.
 - After minimizing, focus goes to the most recently used open window
   (minimized ones are skipped).
 - Virtualization: previews scrolled out of view consume nothing.
-- The panel remembers its monitor, edge and width between runs
-  (`%APPDATA%\montab\settings.json`).
+- Popup notifications (toasts, banners, OSD) never get a tab.
+- Tray icon: left click hides and restores every panel at once (the icon dims,
+  per-monitor settings are kept), right click opens the monitor menu.
+- Settings are stored per monitor (edge, width, whether the panel is shown)
+  in `%APPDATA%\montab\settings.json`.
 
 ## Controls
 
@@ -39,9 +46,13 @@ private memory, ~0% CPU when idle.
 | Ctrl + mouse move | Pan the zoomed preview |
 | Ctrl + click | Reset zoom/pan |
 | Drag a preview | Reorder (within its own section; the dragged item is highlighted) |
-| Drag the top handle or empty area | Move the panel to another monitor/edge (edge picked by monitor half) |
+| Drag the top handle or empty area | Switch edge on its own monitor; dropping it on a monitor without a panel moves it there |
 | Drag the inner edge | Panel width (3–50% of monitor width) |
-| Right click | Menu: dock edge, autostart, exit |
+| Right click a preview | Minimize the window |
+| Right click the same preview again | Send the window below all the others (a monitor's only window is left alone) |
+| Right click the top handle or empty area | Menu: dock edge, hide the panel on this display, autostart, exit |
+| Left click the tray icon | Hide/restore the panels on every monitor (the icon dims; settings are kept) |
+| Right click the tray icon | Menu: per monitor — "enabled" and "dock left/right"; autostart, exit |
 
 ## Browser preview freezes?
 

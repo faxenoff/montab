@@ -105,20 +105,26 @@ the system taskbar does).
 
 ## 2. Architecture (actual)
 
-One process, one UI thread with a message loop, one main panel window.
+One process, one UI thread with a message loop, one panel window per enabled
+monitor plus a hidden tray window.
 
 ```
 montab/
 ├─ src/
 │  ├─ Program.cs              # entry point, single-instance mutex, message loop
 │  ├─ App/
+│  │  ├─ PanelHost.cs         # owner: tracker, switcher, per-monitor panels, tray
 │  │  ├─ PanelWindow.cs       # HWND, WndProc, the whole interaction state machine,
 │  │  │                       #   dock/resize/panel move, context menu, DPI cache
+│  │  ├─ TrayIcon.cs          # Shell_NotifyIcon + monitor menu, WM_DISPLAYCHANGE
+│  │  ├─ DisplayList.cs       # monitor enumeration (EnumDisplayMonitors)
+│  │  ├─ WindowRef.cs         # HWND → window object via GWLP_USERDATA (many windows)
 │  │  ├─ AppBar.cs            # SHAppBarMessage wrapper
+│  │  ├─ Autostart.cs         # HKCU\...\Run
 │  │  └─ Strings.cs           # RU/EN menu strings (GetUserDefaultUILanguage)
 │  ├─ Core/
 │  │  ├─ WindowTracker.cs     # EnumWindows + WinEventHook → two-section list
-│  │  ├─ WindowItem.cs        # hwnd, title, icon, aspect, IsMinimized, zoom/center
+│  │  ├─ WindowItem.cs        # hwnd, title, icon, monitor, aspect, IsMinimized, zoom
 │  │  └─ SwitchController.cs  # MRU foreground history + activation with fallbacks
 │  ├─ Thumbs/
 │  │  └─ ThumbnailManager.cs  # DWM thumbnails: virtualization, rcSource, opacity
@@ -129,6 +135,47 @@ montab/
 │     └─ Settings.cs          # STJ source-gen; %APPDATA%\montab\settings.json
 └─ montab.csproj              # net11.0-windows, PublishAot, trimming, CsWin32
 ```
+
+### Multi-monitor: a panel on every screen
+
+`PanelHost` keeps **one** `WindowTracker` and **one** `SwitchController` for the
+whole app (WinEvent hooks and MRU history are global by nature) and creates as
+many panels as there are enabled monitors. The settings key is the device name
+from `MONITORINFOEXW.szDevice` (`\.\DISPLAY1`); an `HMONITOR` is not stable
+across configuration changes and lives only inside a `DisplayInfo` snapshot.
+
+- Each panel picks its own monitor's windows (`WindowItem.Monitor`) out of the
+  shared list into a reusable buffer — filtering without allocations.
+- A window's monitor is `MonitorFromWindow`; for a minimized one it is
+  `MonitorFromRect` over `rcNormalPosition` from `GetWindowPlacement` — a
+  minimized window physically sits at (-32000,-32000), where "nearest monitor"
+  lies.
+- `EVENT_OBJECT_LOCATIONCHANGE` recomputes the monitor, so a window dragged to
+  the next screen moves to the other panel on its own.
+- `WM_DISPLAYCHANGE` (caught by the tray window — there may be no panels at all)
+  rebuilds the set of panels: vanished monitors lose theirs, new ones get a
+  panel modelled on the first configured one.
+- The `s_instance` singleton gave way to the classic GWLP_USERDATA: the object
+  pointer is stored on `WM_NCCREATE` and released on `WM_NCDESTROY`.
+
+### Tray
+
+A hidden — but ordinary, not message-only, otherwise the menu won't dismiss on
+an outside click — `montab.tray` window owns the `Shell_NotifyIcon` icon and
+survives an explorer restart (`TaskbarCreated`).
+
+- **Left click** — hide/restore the panels on every monitor. That is a separate
+  host flag; per-monitor `Enabled` is untouched, so restoring brings everything
+  back as it was. The flag is not persisted between runs, and enabling a monitor
+  from the menu clears it (otherwise "Enabled" would do nothing).
+- **Right click** — the menu: one item per monitor (`Display 1 · 2560×1600
+  (primary)`) with an "Enabled" / "Dock left" / "Dock right" submenu, plus
+  autostart and exit.
+
+The icon is an application resource (`LoadImage(IDI_APPLICATION)`) built from
+`assets/tray.svg` by `tools/make-icon.ps1`. The "panels hidden" variant is
+derived from it at runtime: the icon is drawn into a 32-bit DIB, the pixels are
+desaturated and dimmed to 60%, `CreateIconIndirect` — no second resource.
 
 ### Data model: a two-section list
 
@@ -169,6 +216,13 @@ system minimize.
   (the list reflows after the first click and the 4-pixel system zone misses).
 - **Click on a strip**: instant restore + activation; a double click is
   equivalent to a single one (the second click is a no-op).
+- **Right click on a tile**: minimize, with the same 150 ms delay.
+- **Second right click on the same tile**: instead of minimizing, the window is
+  sent to the bottom of the z-order (`HWND_BOTTOM`) and focus goes to the next
+  MRU window. A monitor's only live window is left alone — moving it in the
+  z-order means nothing.
+- The context menu now lives on the top handle and the empty part of the list —
+  a right click on a tile is taken by the gestures above.
 - After minimizing the active window, focus goes to the **most recently used
   open window per MRU history**; minimized and closed ones are skipped
   (32-entry history, the filter is supplied by the panel). The
@@ -206,10 +260,17 @@ system minimize.
   window's ✕ is under the cursor).
 - Active window: accent frame around the whole block + preview dimming
   (`opacity` ≈ 110).
-- Context menu: dock edge, autostart (HKCU\...\Run), exit; localized
-  (Russian system UI language → Russian, otherwise English).
-- Settings (edge, width, monitor) are saved on every change and on
-  `WM_ENDSESSION`; restored at startup (a vanished monitor → primary).
+- Panel context menu: dock edge, hide the panel on this display, autostart
+  (HKCU\...\Run), exit; localized (Russian system UI language → Russian,
+  otherwise English).
+- Notification windows get no tab: filtered out by `WS_EX_NOACTIVATE`, and also
+  windows with no frame styles (`WS_THICKFRAME|WS_MINIMIZEBOX|WS_MAXIMIZEBOX|
+  WS_SYSMENU`) and no `WS_CAPTION` **if** they are also smaller than half the
+  monitor — otherwise borderless fullscreen windows (games, players) would be
+  swept up too.
+- Settings (edge, width, whether the panel is shown) are stored per monitor,
+  saved on every change and on `WM_ENDSESSION`; a settings file from the
+  previous version is read as the defaults for every monitor.
 - Per-Monitor V2 DPI: physical pixels everywhere, DPI-dependent sizes
   precomputed on `WM_DPICHANGED`.
 
@@ -226,7 +287,8 @@ system minimize.
 | Label below the preview | Label above the preview | Requested after real use |
 | Deferred activation ~500 ms (system dblclick) | 150 ms + second-click detection on DOWN | The 4 px system zone missed due to list reflow |
 | Persisting order between runs | Not persisted | Order "lives" with the windows; the value never materialized |
-| Tray icon | None | The panel's context menu covers it |
+| Tray icon | Present (since 1.1) | There are several panels now and all of them can be off — an entry point outside the panel is needed |
+| One panel on a chosen monitor | A panel per monitor, each with its own windows | Requested after real use |
 | WGC-based strip "activity" detector | None | Expensive; events (restore/foreground) suffice |
 
 ## 4. Risks: what actually happened

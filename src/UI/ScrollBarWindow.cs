@@ -41,10 +41,10 @@ internal sealed unsafe class ScrollBarWindow
         return ((uint)alpha << 24) | (c << 16) | (c << 8) | c;
     }
 
-    static ScrollBarWindow? s_instance;
+    static bool s_classRegistered;
 
     readonly PanelWindow _panel;
-    readonly HWND _hwnd;
+    HWND _hwnd;
 
     int _totalHeight, _viewportHeight, _scrollOffset;
     int _minThumbPx = 24;
@@ -60,28 +60,38 @@ internal sealed unsafe class ScrollBarWindow
     uint* _bits;
     int _surfaceWidth, _surfaceHeight;
 
-    public ScrollBarWindow(PanelWindow panel, HWND parent, HINSTANCE hInstance)
+    public ScrollBarWindow(PanelWindow panel, HWND owner, HINSTANCE hInstance)
     {
         _panel = panel;
-        s_instance = this;
 
-        fixed (char* className = ClassName)
+        if (!s_classRegistered)
         {
-            var wc = new WNDCLASSEXW
+            fixed (char* className = ClassName)
             {
-                cbSize = (uint)sizeof(WNDCLASSEXW),
-                lpfnWndProc = &StaticWndProc,
-                hInstance = hInstance,
-                lpszClassName = className,
-            };
-            PInvoke.RegisterClassEx(&wc);
+                var wc = new WNDCLASSEXW
+                {
+                    cbSize = (uint)sizeof(WNDCLASSEXW),
+                    lpfnWndProc = &StaticWndProc,
+                    hInstance = hInstance,
+                    lpszClassName = className,
+                };
+                PInvoke.RegisterClassEx(&wc);
+            }
+            s_classRegistered = true;
         }
 
         // Owner (не parent): owned-окно всегда над владельцем в z-order
         _hwnd = PInvoke.CreateWindowEx(
             WINDOW_EX_STYLE.WS_EX_LAYERED | WINDOW_EX_STYLE.WS_EX_NOACTIVATE | WINDOW_EX_STYLE.WS_EX_TOOLWINDOW,
             ClassName, null, WINDOW_STYLE.WS_POPUP,
-            0, 0, 0, 0, parent, default, hInstance, null);
+            0, 0, 0, 0, owner, default, hInstance, WindowRef.Pin(this));
+    }
+
+    /// <summary>Уничтожается вместе с панелью-владельцем; поверхность освобождает WM_DESTROY.</summary>
+    public void Destroy()
+    {
+        if (_hwnd != default)
+            PInvoke.DestroyWindow(_hwnd);
     }
 
     /// <summary>Полоса у внешнего края панели (экранные координаты), от «ручки» до низа.</summary>
@@ -127,8 +137,16 @@ internal sealed unsafe class ScrollBarWindow
     {
         try
         {
-            return s_instance?.HandleMessage(hwnd, msg, wParam, lParam)
+            if (msg == PInvoke.WM_NCCREATE)
+                WindowRef.Bind(hwnd, lParam);
+
+            var self = WindowRef.Get(hwnd) as ScrollBarWindow;
+            var result = self?.HandleMessage(hwnd, msg, wParam, lParam)
                 ?? PInvoke.DefWindowProc(hwnd, msg, wParam, lParam);
+
+            if (msg == PInvoke.WM_NCDESTROY)
+                WindowRef.Release(hwnd);
+            return result;
         }
         catch (Exception ex)
         {
@@ -141,6 +159,15 @@ internal sealed unsafe class ScrollBarWindow
     {
         switch (msg)
         {
+            case PInvoke.WM_NCCREATE:
+                _hwnd = hwnd;
+                break;
+
+            case PInvoke.WM_DESTROY:
+                DestroySurface();
+                _hwnd = default;
+                return new LRESULT(0);
+
             case PInvoke.WM_NCHITTEST:
             {
                 // Клик по крестику закрытия проходит сквозь скроллбар в панель

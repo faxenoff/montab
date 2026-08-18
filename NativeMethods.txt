@@ -15,6 +15,8 @@ SetWindowPos
 GetClientRect
 InvalidateRect
 SetForegroundWindow
+SetWindowLongPtrW
+CREATESTRUCTW
 
 // messages & hit-test
 WM_DESTROY
@@ -25,12 +27,15 @@ WM_SETCURSOR
 WM_MOUSEMOVE
 WM_LBUTTONDOWN
 WM_LBUTTONUP
+WM_RBUTTONDOWN
 WM_RBUTTONUP
 WM_MOUSEWHEEL
 WM_CAPTURECHANGED
 WM_DPICHANGED
 WM_DISPLAYCHANGE
 WM_ENDSESSION
+WM_NCCREATE
+WM_NCDESTROY
 HTCLIENT
 
 // painting
@@ -64,6 +69,20 @@ IDC_SIZEWE
 IDC_SIZENS
 IDC_SIZEALL
 
+// tray icon
+Shell_NotifyIconW
+NOTIFYICONDATAW
+NOTIFY_ICON_MESSAGE
+NOTIFY_ICON_DATA_FLAGS
+LoadImageW
+LoadIconW
+IDI_APPLICATION
+CreateIconIndirect
+CreateBitmap
+ICONINFO
+GetSystemMetrics
+SYSTEM_METRICS_INDEX
+
 // context menu
 CreatePopupMenu
 AppendMenuW
@@ -72,6 +91,8 @@ DestroyMenu
 
 // monitors & dpi
 MonitorFromPoint
+MonitorFromWindow
+MonitorFromRect
 GetMonitorInfoW
 MONITORINFOEXW
 EnumDisplayMonitors
@@ -108,6 +129,7 @@ GetClassLongPtrW
 GetAncestor
 GetLastActivePopup
 GetWindowThreadProcessId
+GetWindowPlacement
 DwmGetWindowAttribute
 EVENT_SYSTEM_FOREGROUND
 EVENT_SYSTEM_MINIMIZESTART

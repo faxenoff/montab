@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.Dwm;
+using Windows.Win32.Graphics.Gdi;
 using Windows.Win32.UI.Accessibility;
 using Windows.Win32.UI.WindowsAndMessaging;
 
@@ -154,10 +155,13 @@ internal sealed unsafe class WindowTracker : IDisposable
                 break;
 
             case PInvoke.EVENT_OBJECT_LOCATIONCHANGE:
-                if (_byHwnd.TryGetValue(hwnd, out var moved) && !moved.IsMinimized
-                    && UpdateAspect(moved))
+                if (_byHwnd.TryGetValue(hwnd, out var moved) && !moved.IsMinimized)
                 {
-                    Changed?.Invoke();
+                    // Перетаскивание окна между мониторами переносит его тайл в другую панель
+                    bool dirty = UpdateAspect(moved);
+                    dirty |= UpdateMonitor(moved);
+                    if (dirty)
+                        Changed?.Invoke();
                 }
                 break;
         }
@@ -232,10 +236,23 @@ internal sealed unsafe class WindowTracker : IDisposable
         {
             item.IsMinimized = minimized;
             if (!minimized)
+            {
                 UpdateAspect(item); // к MINIMIZEEND окно уже в финальной геометрии
+                UpdateMonitor(item);
+            }
             Reposition(item);
             Changed?.Invoke();
         }
+    }
+
+    /// <summary>Пересчёт мониторов всех окон — после смены конфигурации дисплеев.</summary>
+    public void RefreshMonitors()
+    {
+        bool dirty = false;
+        foreach (var item in _items)
+            dirty |= UpdateMonitor(item);
+        if (dirty)
+            Changed?.Invoke();
     }
 
     static WindowItem CreateItem(HWND hwnd)
@@ -250,7 +267,32 @@ internal sealed unsafe class WindowTracker : IDisposable
             IsMinimized = PInvoke.IsIconic(hwnd),
         };
         UpdateAspect(item);
+        UpdateMonitor(item);
         return item;
+    }
+
+    /// <summary>true — окно переехало на другой монитор.</summary>
+    static bool UpdateMonitor(WindowItem item)
+    {
+        var monitor = MonitorOf(item.Hwnd);
+        if (monitor == item.Monitor)
+            return false;
+        item.Monitor = monitor;
+        return true;
+    }
+
+    static HMONITOR MonitorOf(HWND hwnd)
+    {
+        // Свёрнутое окно физически уезжает в (-32000,-32000): его монитор —
+        // тот, где окно развернётся обратно (rcNormalPosition).
+        if (PInvoke.IsIconic(hwnd))
+        {
+            var placement = new WINDOWPLACEMENT { length = (uint)sizeof(WINDOWPLACEMENT) };
+            if (PInvoke.GetWindowPlacement(hwnd, ref placement))
+                return PInvoke.MonitorFromRect(in placement.rcNormalPosition, MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST);
+        }
+
+        return PInvoke.MonitorFromWindow(hwnd, MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST);
     }
 
     /// <summary>true — аспект источника ощутимо изменился.</summary>
@@ -276,7 +318,7 @@ internal sealed unsafe class WindowTracker : IDisposable
         return true;
     }
 
-    /// <summary>Классический alt-tab-фильтр + отсев cloaked-окон.</summary>
+    /// <summary>Классический alt-tab-фильтр + отсев cloaked-окон и всплывающих уведомлений.</summary>
     static bool IsAppWindow(HWND hwnd)
     {
         if (!PInvoke.IsWindowVisible(hwnd))
@@ -286,6 +328,9 @@ internal sealed unsafe class WindowTracker : IDisposable
 
         var exStyle = (WINDOW_EX_STYLE)unchecked((uint)PInvoke.GetWindowLongPtr(hwnd, WINDOW_LONG_PTR_INDEX.GWL_EXSTYLE));
         if ((exStyle & WINDOW_EX_STYLE.WS_EX_TOOLWINDOW) != 0 && (exStyle & WINDOW_EX_STYLE.WS_EX_APPWINDOW) == 0)
+            return false;
+
+        if (IsNotification(hwnd, exStyle))
             return false;
 
         // Правило alt-tab (Raymond Chen): у owned-цепочки показывается корневой владелец.
@@ -308,6 +353,42 @@ internal sealed unsafe class WindowTracker : IDisposable
         int cloaked = 0;
         PInvoke.DwmGetWindowAttribute(hwnd, DWMWINDOWATTRIBUTE.DWMWA_CLOAKED, &cloaked, sizeof(int));
         return cloaked == 0;
+    }
+
+    /// <summary>
+    /// Всплывающее уведомление (тост, баннер мессенджера, OSD), а не рабочее окно.
+    /// Признаки нарочно консервативные — потерять настоящее окно хуже лишнего таба:
+    /// либо окно принципиально не активируется, либо у него нет ни рамки, ни кнопок,
+    /// ни заголовка с системным меню, И оно заметно меньше монитора (иначе это
+    /// безрамочное полноэкранное окно — игры и плееры делают именно такие).
+    /// </summary>
+    static bool IsNotification(HWND hwnd, WINDOW_EX_STYLE exStyle)
+    {
+        if ((exStyle & WINDOW_EX_STYLE.WS_EX_NOACTIVATE) != 0)
+            return true;
+
+        var style = (WINDOW_STYLE)unchecked((uint)PInvoke.GetWindowLongPtr(hwnd, WINDOW_LONG_PTR_INDEX.GWL_STYLE));
+        const WINDOW_STYLE frameBits =
+            WINDOW_STYLE.WS_THICKFRAME | WINDOW_STYLE.WS_MINIMIZEBOX | WINDOW_STYLE.WS_MAXIMIZEBOX |
+            WINDOW_STYLE.WS_SYSMENU;
+        if ((style & frameBits) != 0 || (style & WINDOW_STYLE.WS_CAPTION) == WINDOW_STYLE.WS_CAPTION)
+            return false;
+
+        return IsSmallerThanHalfMonitor(hwnd);
+    }
+
+    static bool IsSmallerThanHalfMonitor(HWND hwnd)
+    {
+        if (!PInvoke.GetWindowRect(hwnd, out RECT rc))
+            return false;
+
+        var monitor = PInvoke.MonitorFromWindow(hwnd, MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST);
+        var mi = new MONITORINFO { cbSize = (uint)sizeof(MONITORINFO) };
+        if (!PInvoke.GetMonitorInfo(monitor, ref mi))
+            return false;
+
+        return (rc.right - rc.left) * 2 < mi.rcMonitor.right - mi.rcMonitor.left
+            && (rc.bottom - rc.top) * 2 < mi.rcMonitor.bottom - mi.rcMonitor.top;
     }
 
     static string GetWindowText(HWND hwnd)

@@ -7,9 +7,8 @@ using var singleInstance = new Mutex(initiallyOwned: true, "montab.single-instan
 if (!isFirst)
     return;
 
-var settings = Settings.Load();
-var panel = new PanelWindow(settings);
-panel.Create();
+var host = new PanelHost(Settings.Load());
+host.Start();
 
 while (PInvoke.GetMessage(out MSG msg, default, 0, 0))
 {

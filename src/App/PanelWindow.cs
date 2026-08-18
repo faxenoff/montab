@@ -14,8 +14,9 @@ using Windows.Win32.UI.WindowsAndMessaging;
 namespace Montab.App;
 
 /// <summary>
-/// Главное окно панели: WS_POPUP без рамки, докается через AppBar,
+/// Окно панели одного монитора: WS_POPUP без рамки, докается через AppBar,
 /// не активируется по клику (WS_EX_NOACTIVATE), скрыто из alt-tab.
+/// В ленту попадают только окна своего монитора.
 /// </summary>
 internal sealed unsafe class PanelWindow
 {
@@ -26,22 +27,20 @@ internal sealed unsafe class PanelWindow
     const uint CmdDockRight = 2;
     const uint CmdExit = 3;
     const uint CmdAutostart = 4;
-
-    const string AutostartRunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    const string AutostartValue = "montab";
+    const uint CmdHide = 5;
 
     const nuint ActivateTimerId = 1;
     const nuint HoverZoomTimerId = 2;
-    /// <summary>Окно ожидания второго клика по живому тайлу.</summary>
-    const uint LabelActivateDelayMs = 150;
+    const nuint MinimizeTimerId = 3;
+    /// <summary>Окно ожидания второго клика по живому тайлу (общее для левой и правой кнопки).</summary>
+    const uint ClickDelayMs = 150;
     const uint HoverZoomDelayMs = 700;
     const double HoverZoomFactor = 5.0;
     const nint MK_CONTROL = 0x0008;
 
     enum PressState { None, Pressed, Dragging, PanelDrag }
 
-    static PanelWindow? s_instance;
-    static readonly List<HMONITOR> s_monitorScratch = [];
+    static bool s_classRegistered;
     static readonly HWND TopmostAnchor = new(-1); // HWND_TOPMOST
     static readonly HWND BottomAnchor = new(1);   // HWND_BOTTOM
 
@@ -51,14 +50,18 @@ internal sealed unsafe class PanelWindow
     static readonly HCURSOR SizeNSCursor = PInvoke.LoadCursor(default, PInvoke.IDC_SIZENS);
     static readonly HCURSOR SizeAllCursor = PInvoke.LoadCursor(default, PInvoke.IDC_SIZEALL);
 
-    readonly Settings _settings;
-    readonly WindowTracker _tracker = new();
-    readonly SwitchController _switch = new();
+    readonly PanelHost _host;
+    readonly MonitorSettings _mon;
+    readonly WindowTracker _tracker;
+    readonly SwitchController _switch;
     readonly LayoutEngine _layout = new();
     readonly Renderer _renderer = new();
+    /// <summary>Окна своего монитора; список переиспользуется между кадрами.</summary>
+    readonly List<WindowItem> _mine = [];
     IReadOnlyList<LayoutItem> _layoutItems = [];
     int _scrollOffset;
 
+    DisplayInfo _display;
     HWND _hwnd;
     AppBar? _appBar;
     ThumbnailManager? _thumbs;
@@ -73,7 +76,8 @@ internal sealed unsafe class PanelWindow
 
     // Двойной клик детектируем сами: системный WM_LBUTTONDBLCLK ненадёжен,
     // когда лента перестраивается после первого клика.
-    WindowItem? _pendingLabelItem; // живой тайл ждёт активации по таймеру
+    WindowItem? _pendingLabelItem;    // живой тайл ждёт активации по таймеру
+    WindowItem? _pendingMinimizeItem; // живой тайл ждёт сворачивания по правому клику
     int _closeClickTick;
     int _closeClickX, _closeClickY;
 
@@ -81,6 +85,7 @@ internal sealed unsafe class PanelWindow
     WindowItem? _pressItem;
     WindowItem? _hoverClose;
     bool _swallowNextUp;
+    bool _swallowNextRightUp;
     int _pressX, _pressY;
 
     // Hover-лупа: наведение на превью без нажатий включает временный zoom+pan
@@ -88,14 +93,50 @@ internal sealed unsafe class PanelWindow
     WindowItem? _hoverCandidate;
     double _savedZoom = 1, _savedCenterX = 0.5, _savedCenterY = 0.5;
 
-    public PanelWindow(Settings settings) => _settings = settings;
+    public PanelWindow(PanelHost host, MonitorSettings settings)
+    {
+        _host = host;
+        _mon = settings;
+        _tracker = host.Tracker;
+        _switch = host.Switch;
+    }
 
     public HWND Handle => _hwnd;
 
-    public void Create()
+    public string Device => _display.Device;
+
+    public HMONITOR Monitor => _display.Handle;
+
+    public void Create(HINSTANCE hInstance, DisplayInfo display)
     {
-        s_instance = this;
-        var hInstance = PInvoke.GetModuleHandle(null);
+        _display = display;
+        EnsureClass(hInstance);
+
+        _hwnd = PInvoke.CreateWindowEx(
+            WINDOW_EX_STYLE.WS_EX_TOOLWINDOW | WINDOW_EX_STYLE.WS_EX_NOACTIVATE | WINDOW_EX_STYLE.WS_EX_TOPMOST,
+            ClassName,
+            "montab",
+            WINDOW_STYLE.WS_POPUP,
+            0, 0, 200, 200,
+            default, default, hInstance, WindowRef.Pin(this));
+
+        if (_hwnd == default)
+            throw new InvalidOperationException("CreateWindowExW failed");
+
+        SetDpi(PInvoke.GetDpiForWindow(_hwnd));
+        _scrollbar = new ScrollBarWindow(this, _hwnd, hInstance);
+        _appBar = new AppBar(_hwnd, PInvoke.RegisterWindowMessage("montab.appbar"));
+        _appBar.Register();
+        UpdatePosition();
+        PInvoke.ShowWindow(_hwnd, SHOW_WINDOW_CMD.SW_SHOWNOACTIVATE);
+
+        _thumbs = new ThumbnailManager(_hwnd);
+    }
+
+    static void EnsureClass(HINSTANCE hInstance)
+    {
+        if (s_classRegistered)
+            return;
 
         fixed (char* className = ClassName)
         {
@@ -104,7 +145,7 @@ internal sealed unsafe class PanelWindow
                 cbSize = (uint)sizeof(WNDCLASSEXW),
                 style = WNDCLASS_STYLES.CS_HREDRAW | WNDCLASS_STYLES.CS_VREDRAW,
                 lpfnWndProc = &StaticWndProc,
-                hInstance = (HINSTANCE)hInstance.Value,
+                hInstance = hInstance,
                 hCursor = ArrowCursor,
                 // hbrBackground не нужен: WM_ERASEBKGND подавлен, весь фон рисует Renderer
                 lpszClassName = className,
@@ -113,34 +154,31 @@ internal sealed unsafe class PanelWindow
                 throw new InvalidOperationException("RegisterClassEx failed");
         }
 
-        _hwnd = PInvoke.CreateWindowEx(
-            WINDOW_EX_STYLE.WS_EX_TOOLWINDOW | WINDOW_EX_STYLE.WS_EX_NOACTIVATE | WINDOW_EX_STYLE.WS_EX_TOPMOST,
-            ClassName,
-            "montab",
-            WINDOW_STYLE.WS_POPUP,
-            0, 0, 200, 200,
-            default, default, (HINSTANCE)hInstance.Value, null);
-
-        if (_hwnd == default)
-            throw new InvalidOperationException("CreateWindowExW failed");
-
-        SetDpi(PInvoke.GetDpiForWindow(_hwnd));
-        _scrollbar = new ScrollBarWindow(this, _hwnd, (HINSTANCE)hInstance.Value);
-        _appBar = new AppBar(_hwnd, PInvoke.RegisterWindowMessage("montab.appbar"));
-        _appBar.Register();
-        UpdatePosition();
-        PInvoke.ShowWindow(_hwnd, SHOW_WINDOW_CMD.SW_SHOWNOACTIVATE);
-
-        _thumbs = new ThumbnailManager(_hwnd);
-        _tracker.Changed += OnTrackerChanged;
-        _tracker.ForegroundChanged += _switch.OnForegroundChanged;
-        // Автопереходы по истории не идут в свёрнутые окна
-        _switch.IsEligibleTarget = hwnd => _tracker.TryGet(hwnd, out var item) && !item.IsMinimized;
-        _tracker.Start();
-        _switch.OnForegroundChanged(_tracker.ForegroundWindow);
+        s_classRegistered = true;
     }
 
-    void OnTrackerChanged() => PInvoke.InvalidateRect(_hwnd, null, false);
+    /// <summary>Панель уезжает (монитор отключили или её выключили в трее).</summary>
+    public void Destroy()
+    {
+        if (_hwnd != default)
+            PInvoke.DestroyWindow(_hwnd);
+    }
+
+    /// <summary>Монитор переехал/сменил разрешение — пересогласовать полосу.</summary>
+    public void SetDisplay(DisplayInfo display)
+    {
+        _display = display;
+        UpdatePosition();
+    }
+
+    /// <summary>Настройки панели изменили извне (меню трея) — переразместиться.</summary>
+    public void Relayout() => UpdatePosition();
+
+    public void Invalidate()
+    {
+        if (_hwnd != default)
+            PInvoke.InvalidateRect(_hwnd, null, false);
+    }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]
     static LRESULT StaticWndProc(HWND hwnd, uint msg, WPARAM wParam, LPARAM lParam)
@@ -148,8 +186,16 @@ internal sealed unsafe class PanelWindow
         // Исключение, ушедшее в нативный фрейм, под AOT роняет процесс без диагностики.
         try
         {
-            return s_instance?.HandleMessage(hwnd, msg, wParam, lParam)
+            if (msg == PInvoke.WM_NCCREATE)
+                WindowRef.Bind(hwnd, lParam);
+
+            var self = WindowRef.Get(hwnd) as PanelWindow;
+            var result = self?.HandleMessage(hwnd, msg, wParam, lParam)
                 ?? PInvoke.DefWindowProc(hwnd, msg, wParam, lParam);
+
+            if (msg == PInvoke.WM_NCDESTROY)
+                WindowRef.Release(hwnd);
+            return result;
         }
         catch (Exception ex)
         {
@@ -181,14 +227,18 @@ internal sealed unsafe class PanelWindow
 
         switch (msg)
         {
+            case PInvoke.WM_NCCREATE:
+                _hwnd = hwnd;
+                break;
+
             case PInvoke.WM_PAINT:
                 PInvoke.GetClientRect(hwnd, out RECT client);
-                _layoutItems = _layout.Compute(_tracker.Items, client, _dpi, _scrollOffset);
+                _layoutItems = _layout.Compute(CollectMine(), client, _dpi, _scrollOffset);
                 int maxScroll = Math.Max(0, _layout.TotalHeight - (client.bottom - client.top));
                 if (_scrollOffset > maxScroll)
                 {
                     _scrollOffset = maxScroll;
-                    _layoutItems = _layout.Compute(_tracker.Items, client, _dpi, _scrollOffset);
+                    _layoutItems = _layout.Compute(_mine, client, _dpi, _scrollOffset);
                 }
                 _thumbs?.Sync(_layoutItems, client, _tracker.ForegroundWindow);
                 _renderer.Paint(hwnd, _layoutItems, _tracker.ForegroundWindow, _dpi, _hoverClose,
@@ -266,7 +316,7 @@ internal sealed unsafe class PanelWindow
                 {
                     _resizing = false;
                     PInvoke.ReleaseCapture();
-                    _settings.Save();
+                    _host.Save();
                 }
                 else if (_press == PressState.Dragging)
                 {
@@ -284,6 +334,19 @@ internal sealed unsafe class PanelWindow
                 }
                 return new LRESULT(0);
 
+            case PInvoke.WM_RBUTTONDOWN:
+                OnRightPress(GetXLParam(lParam), GetYLParam(lParam));
+                return new LRESULT(0);
+
+            case PInvoke.WM_RBUTTONUP:
+                if (_swallowNextRightUp)
+                {
+                    _swallowNextRightUp = false;
+                    return new LRESULT(0);
+                }
+                OnRightClick(GetXLParam(lParam), GetYLParam(lParam));
+                return new LRESULT(0);
+
             case PInvoke.WM_TIMER:
                 if (wParam.Value == ActivateTimerId)
                 {
@@ -293,6 +356,15 @@ internal sealed unsafe class PanelWindow
                         _pendingLabelItem = null;
                         if (PInvoke.IsWindow(pending.Hwnd))
                             _switch.Activate(pending.Hwnd);
+                    }
+                }
+                else if (wParam.Value == MinimizeTimerId)
+                {
+                    PInvoke.KillTimer(hwnd, MinimizeTimerId);
+                    if (_pendingMinimizeItem is { } target)
+                    {
+                        _pendingMinimizeItem = null;
+                        Minimize(target);
                     }
                 }
                 else if (wParam.Value == HoverZoomTimerId)
@@ -318,36 +390,23 @@ internal sealed unsafe class PanelWindow
                 _pressItem = null;
                 break;
 
-            case PInvoke.WM_RBUTTONUP:
-                ShowContextMenu();
-                return new LRESULT(0);
-
             case PInvoke.WM_DPICHANGED:
                 SetDpi((uint)(wParam.Value & 0xFFFF));
                 UpdatePosition();
                 return new LRESULT(0);
 
-            case PInvoke.WM_DISPLAYCHANGE:
-                UpdatePosition();
-                break;
-
-            case PInvoke.WM_ENDSESSION:
-                // Выключение/перезагрузка Windows: WM_DESTROY может не прийти
-                if (wParam.Value != 0)
-                    _settings.Save();
-                break;
-
             case PInvoke.WM_CLOSE:
-                PInvoke.DestroyWindow(hwnd);
+                // Внешний сигнал завершения (taskkill, конец сеанса) — уходит всё приложение;
+                // скрыть отдельную панель можно из её меню или из трея.
+                _host.Exit();
                 return new LRESULT(0);
 
             case PInvoke.WM_DESTROY:
-                _tracker.Dispose();
+                _scrollbar?.Destroy();
                 _thumbs?.Dispose();
                 _renderer.Dispose();
                 _appBar?.Unregister();
-                _settings.Save();
-                PInvoke.PostQuitMessage(0);
+                _hwnd = default;
                 return new LRESULT(0);
         }
 
@@ -359,26 +418,24 @@ internal sealed unsafe class PanelWindow
     /// <summary>Пересогласовывает полосу appbar'а и ставит окно в полученный rect.</summary>
     void UpdatePosition()
     {
-        if (_updatingPosition || _appBar is null)
+        if (_updatingPosition || _appBar is null || _hwnd == default)
             return;
         _updatingPosition = true;
         try
         {
-            var (monitor, device) = GetTargetMonitor();
-            _settings.Monitor = device;
-
-            int monitorWidth = monitor.right - monitor.left;
-            double pct = Math.Clamp(_settings.WidthPercent, Settings.MinWidthPercent, Settings.MaxWidthPercent);
+            var monitor = _display.Rect;
+            int monitorWidth = _display.Width;
+            double pct = Math.Clamp(_mon.WidthPercent, Settings.MinWidthPercent, Settings.MaxWidthPercent);
             int width = Math.Max(40, (int)Math.Round(monitorWidth * pct / 100.0));
 
-            var rc = _appBar.SetPos(_settings.Edge, monitor, width);
+            var rc = _appBar.SetPos(_mon.Edge, monitor, width);
             // MoveWindow недостаточно: бит WS_EX_TOPMOST может рассинхронизироваться
             // с фактической z-позицией — переутверждаем topmost при каждом размещении.
             PInvoke.SetWindowPos(_hwnd, TopmostAnchor,
                 rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top,
                 SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE);
             SetDpi(PInvoke.GetDpiForWindow(_hwnd));
-            _scrollbar?.Layout(rc, _dpi, _settings.Edge == DockEdge.Right, _headerPx);
+            _scrollbar?.Layout(rc, _dpi, _mon.Edge == DockEdge.Right, _headerPx);
         }
         finally
         {
@@ -388,65 +445,20 @@ internal sealed unsafe class PanelWindow
 
     void ResizeToScreenX(int screenX)
     {
-        var (monitor, _) = GetTargetMonitor();
-        int monitorWidth = monitor.right - monitor.left;
+        int monitorWidth = _display.Width;
         if (monitorWidth <= 0)
             return;
 
-        int widthPx = _settings.Edge == DockEdge.Left
-            ? screenX - monitor.left
-            : monitor.right - screenX;
+        int widthPx = _mon.Edge == DockEdge.Left
+            ? screenX - _display.Rect.left
+            : _display.Rect.right - screenX;
 
         double pct = Math.Clamp(widthPx * 100.0 / monitorWidth, Settings.MinWidthPercent, Settings.MaxWidthPercent);
-        if (Math.Abs(pct - _settings.WidthPercent) < 0.05)
+        if (Math.Abs(pct - _mon.WidthPercent) < 0.05)
             return;
 
-        _settings.WidthPercent = pct;
+        _mon.WidthPercent = pct;
         UpdatePosition();
-    }
-
-    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvStdcall)])]
-    static BOOL EnumMonitorProc(HMONITOR hMonitor, HDC hdc, RECT* rect, LPARAM lParam)
-    {
-        s_monitorScratch.Add(hMonitor);
-        return true;
-    }
-
-    /// <summary>Монитор из настроек, иначе primary, иначе первый попавшийся.</summary>
-    (RECT Rect, string Device) GetTargetMonitor()
-    {
-        s_monitorScratch.Clear();
-        PInvoke.EnumDisplayMonitors(default, null, &EnumMonitorProc, default);
-
-        RECT primaryRect = default;
-        string primaryDevice = "";
-        bool primaryFound = false;
-
-        foreach (var hMonitor in s_monitorScratch)
-        {
-            MONITORINFOEXW mi = default;
-            mi.monitorInfo.cbSize = (uint)sizeof(MONITORINFOEXW);
-            if (!PInvoke.GetMonitorInfo(hMonitor, (MONITORINFO*)&mi))
-                continue;
-
-            string device = mi.szDevice.ToString();
-            if (device == _settings.Monitor)
-                return (mi.monitorInfo.rcMonitor, device);
-
-            if (!primaryFound && (mi.monitorInfo.dwFlags & PInvoke.MONITORINFOF_PRIMARY) != 0)
-            {
-                primaryRect = mi.monitorInfo.rcMonitor;
-                primaryDevice = device;
-                primaryFound = true;
-            }
-        }
-
-        if (primaryFound)
-            return (primaryRect, primaryDevice);
-
-        // Fallback: рабочий стол хоть где-то есть.
-        var fallback = new RECT { left = 0, top = 0, right = 1920, bottom = 1080 };
-        return (fallback, "");
     }
 
     #endregion
@@ -466,6 +478,18 @@ internal sealed unsafe class PanelWindow
         _wheelStepPx = LayoutEngine.Scale(60, dpi); // px за один щелчок колеса
     }
 
+    /// <summary>Окна этого монитора в порядке общей ленты (список переиспользуется).</summary>
+    IReadOnlyList<WindowItem> CollectMine()
+    {
+        _mine.Clear();
+        foreach (var item in _tracker.Items)
+        {
+            if (item.Monitor == _display.Handle)
+                _mine.Add(item);
+        }
+        return _mine;
+    }
+
     void Scroll(int wheelDelta) => SetScrollOffset(_scrollOffset + wheelDelta * _wheelStepPx / 120);
 
     /// <summary>Абсолютный скролл ленты (колесо и драг скроллбара).</summary>
@@ -478,6 +502,7 @@ internal sealed unsafe class PanelWindow
         if (offset == _scrollOffset)
             return;
         CancelHoverZoom(); // лента уезжает из-под курсора
+        CancelPendingMinimize();
         _scrollOffset = offset;
         PInvoke.InvalidateRect(_hwnd, null, false);
     }
@@ -526,6 +551,8 @@ internal sealed unsafe class PanelWindow
 
     void OnPress(int x, int y, bool ctrl)
     {
+        CancelPendingMinimize();
+
         // «Ручка» сверху или пустая зона — перетаскивание всей панели
         if (y < _headerPx || HitTest(x, y) is not { } li)
         {
@@ -543,10 +570,7 @@ internal sealed unsafe class PanelWindow
         {
             CancelPendingActivation();
             _swallowNextUp = true;
-            bool wasForeground = li.Window.Hwnd == _tracker.ForegroundWindow;
-            PInvoke.ShowWindow(li.Window.Hwnd, SHOW_WINDOW_CMD.SW_SHOWMINNOACTIVE);
-            if (wasForeground)
-                _switch.ActivateMostRecentExcept(li.Window.Hwnd);
+            Minimize(li.Window);
             return;
         }
 
@@ -736,28 +760,22 @@ internal sealed unsafe class PanelWindow
             PInvoke.InvalidateRect(_hwnd, null, false); // снять подсветку таскаемого
     }
 
-    /// <summary>Бросок панели: монитор под курсором, край — по половине монитора.</summary>
-    unsafe void DropPanel()
+    /// <summary>
+    /// Бросок панели: свой монитор — смена края по половине экрана,
+    /// свободный чужой — переезд туда (у занятого своя панель уже есть).
+    /// </summary>
+    void DropPanel()
     {
         PInvoke.GetCursorPos(out System.Drawing.Point pt);
-        var hMonitor = PInvoke.MonitorFromPoint(pt, MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST);
+        var target = PInvoke.MonitorFromPoint(pt, MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST);
 
-        MONITORINFOEXW mi = default;
-        mi.monitorInfo.cbSize = (uint)sizeof(MONITORINFOEXW);
-        if (!PInvoke.GetMonitorInfo(hMonitor, (MONITORINFO*)&mi))
+        if (target == _display.Handle)
+        {
+            SetEdge(pt.X < (_display.Rect.left + _display.Rect.right) / 2 ? DockEdge.Left : DockEdge.Right);
             return;
+        }
 
-        var mon = mi.monitorInfo.rcMonitor;
-        var edge = pt.X < (mon.left + mon.right) / 2 ? DockEdge.Left : DockEdge.Right;
-        string device = mi.szDevice.ToString();
-
-        if (device == _settings.Monitor && edge == _settings.Edge)
-            return;
-
-        _settings.Monitor = device;
-        _settings.Edge = edge;
-        UpdatePosition();
-        _settings.Save();
+        _host.MovePanel(this, target, pt.X);
     }
 
     /// <summary>Центр видимой области по позиции курсора над превью данного окна.</summary>
@@ -811,7 +829,7 @@ internal sealed unsafe class PanelWindow
             // Живой тайл: активация после короткого окна ожидания второго клика.
             // Сам второй клик (двойной = свернуть) перехватывается в OnPress.
             _pendingLabelItem = li.Window;
-            PInvoke.SetTimer(_hwnd, ActivateTimerId, LabelActivateDelayMs, null);
+            PInvoke.SetTimer(_hwnd, ActivateTimerId, ClickDelayMs, null);
             return;
         }
 
@@ -821,12 +839,95 @@ internal sealed unsafe class PanelWindow
         _switch.Activate(li.Window.Hwnd);
     }
 
+    /// <summary>
+    /// Правая кнопка по тайлу: второй клик подряд ловим по нажатию — он отменяет
+    /// сворачивание и вместо него уводит окно в самый низ z-order.
+    /// </summary>
+    void OnRightPress(int x, int y)
+    {
+        if (_pendingMinimizeItem is not { } pending)
+            return;
+        if (HitTest(x, y) is not { IsStrip: false } li || li.Window != pending)
+            return;
+
+        CancelPendingMinimize();
+        _swallowNextRightUp = true;
+        SendToBottom(pending);
+    }
+
+    void OnRightClick(int x, int y)
+    {
+        // Меню осталось за «ручкой» вверху и пустой частью ленты
+        if (y < _headerPx || HitTest(x, y) is not { } li)
+        {
+            ShowContextMenu();
+            return;
+        }
+
+        if (li.IsStrip)
+            return; // свёрнутое окно сворачивать некуда
+
+        // Сворачиваем не сразу: короткое окно ожидания оставляет шанс
+        // второму клику увести окно вниз z-order вместо сворачивания.
+        CancelPendingActivation();
+        _pendingMinimizeItem = li.Window;
+        PInvoke.SetTimer(_hwnd, MinimizeTimerId, ClickDelayMs, null);
+    }
+
+    /// <summary>Системное сворачивание с передачей фокуса следующему по истории окну.</summary>
+    void Minimize(WindowItem item)
+    {
+        if (!PInvoke.IsWindow(item.Hwnd))
+            return;
+        bool wasForeground = item.Hwnd == _tracker.ForegroundWindow;
+        PInvoke.ShowWindow(item.Hwnd, SHOW_WINDOW_CMD.SW_SHOWMINNOACTIVE);
+        if (wasForeground)
+            _switch.ActivateMostRecentExcept(item.Hwnd);
+    }
+
+    /// <summary>
+    /// Уводит окно под все остальные. Единственное живое окно монитора
+    /// остаётся как есть — двигать его в z-order бессмысленно.
+    /// </summary>
+    void SendToBottom(WindowItem item)
+    {
+        if (!PInvoke.IsWindow(item.Hwnd) || LiveCount() < 2)
+            return;
+
+        PInvoke.SetWindowPos(item.Hwnd, BottomAnchor, 0, 0, 0, 0,
+            SET_WINDOW_POS_FLAGS.SWP_NOMOVE | SET_WINDOW_POS_FLAGS.SWP_NOSIZE |
+            SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE);
+
+        // Иначе фокус остался бы у окна, которое уже под всеми остальными
+        if (item.Hwnd == _tracker.ForegroundWindow)
+            _switch.ActivateMostRecentExcept(item.Hwnd);
+    }
+
+    int LiveCount()
+    {
+        int count = 0;
+        foreach (var item in _mine)
+        {
+            if (!item.IsMinimized)
+                count++;
+        }
+        return count;
+    }
+
     void CancelPendingActivation(WindowItem? unless = null)
     {
         if (_pendingLabelItem is null || _pendingLabelItem == unless)
             return;
         PInvoke.KillTimer(_hwnd, ActivateTimerId);
         _pendingLabelItem = null;
+    }
+
+    void CancelPendingMinimize()
+    {
+        if (_pendingMinimizeItem is null)
+            return;
+        PInvoke.KillTimer(_hwnd, MinimizeTimerId);
+        _pendingMinimizeItem = null;
     }
 
     /// <summary>Второй клик того же жеста: в пределах double-click-времени (с запасом) и рядом.</summary>
@@ -879,7 +980,7 @@ internal sealed unsafe class PanelWindow
     bool IsInGrip(int clientX)
     {
         PInvoke.GetClientRect(_hwnd, out RECT rc);
-        return _settings.Edge == DockEdge.Left
+        return _mon.Edge == DockEdge.Left
             ? clientX >= rc.right - _gripPx
             : clientX <= _gripPx;
     }
@@ -892,12 +993,13 @@ internal sealed unsafe class PanelWindow
 
         try
         {
-            var left = MENU_ITEM_FLAGS.MF_STRING | (_settings.Edge == DockEdge.Left ? MENU_ITEM_FLAGS.MF_CHECKED : 0);
-            var right = MENU_ITEM_FLAGS.MF_STRING | (_settings.Edge == DockEdge.Right ? MENU_ITEM_FLAGS.MF_CHECKED : 0);
-            var autostart = MENU_ITEM_FLAGS.MF_STRING | (IsAutostartEnabled() ? MENU_ITEM_FLAGS.MF_CHECKED : 0);
+            var left = MENU_ITEM_FLAGS.MF_STRING | (_mon.Edge == DockEdge.Left ? MENU_ITEM_FLAGS.MF_CHECKED : 0);
+            var right = MENU_ITEM_FLAGS.MF_STRING | (_mon.Edge == DockEdge.Right ? MENU_ITEM_FLAGS.MF_CHECKED : 0);
+            var autostart = MENU_ITEM_FLAGS.MF_STRING | (Autostart.IsEnabled() ? MENU_ITEM_FLAGS.MF_CHECKED : 0);
             PInvoke.AppendMenu(menu, left, CmdDockLeft, Strings.DockLeft);
             PInvoke.AppendMenu(menu, right, CmdDockRight, Strings.DockRight);
             PInvoke.AppendMenu(menu, MENU_ITEM_FLAGS.MF_SEPARATOR, 0, null);
+            PInvoke.AppendMenu(menu, MENU_ITEM_FLAGS.MF_STRING, CmdHide, Strings.HideHere);
             PInvoke.AppendMenu(menu, autostart, CmdAutostart, Strings.Autostart);
             PInvoke.AppendMenu(menu, MENU_ITEM_FLAGS.MF_SEPARATOR, 0, null);
             PInvoke.AppendMenu(menu, MENU_ITEM_FLAGS.MF_STRING, CmdExit, Strings.Exit);
@@ -918,11 +1020,15 @@ internal sealed unsafe class PanelWindow
                 case CmdDockRight:
                     SetEdge(DockEdge.Right);
                     break;
+                case CmdHide:
+                    // Уничтожит эту панель — дальше по стеку к её полям не обращаемся
+                    _host.SetEnabled(_display.Device, false);
+                    break;
                 case CmdAutostart:
-                    ToggleAutostart();
+                    Autostart.Toggle();
                     break;
                 case CmdExit:
-                    PInvoke.DestroyWindow(_hwnd);
+                    _host.Exit();
                     break;
             }
         }
@@ -932,28 +1038,13 @@ internal sealed unsafe class PanelWindow
         }
     }
 
-    static bool IsAutostartEnabled()
-    {
-        using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(AutostartRunKey);
-        return key?.GetValue(AutostartValue) is string;
-    }
-
-    static void ToggleAutostart()
-    {
-        using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(AutostartRunKey);
-        if (key.GetValue(AutostartValue) is string)
-            key.DeleteValue(AutostartValue, throwOnMissingValue: false);
-        else
-            key.SetValue(AutostartValue, $"\"{Environment.ProcessPath}\"");
-    }
-
     void SetEdge(DockEdge edge)
     {
-        if (_settings.Edge == edge)
+        if (_mon.Edge == edge)
             return;
-        _settings.Edge = edge;
+        _mon.Edge = edge;
         UpdatePosition();
-        _settings.Save();
+        _host.Save();
     }
 
     #endregion
