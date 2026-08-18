@@ -3,8 +3,9 @@
 # montab — architecture and final requirements (as built)
 
 > Status: fully implemented, see README for user-facing documentation.
-> Actual metrics: single exe **1.95 MB** (NativeAOT, aggressive trimming),
-> ~4 MB private memory, ~0% CPU when idle, zero allocations in a steady frame.
+> Actual metrics: single exe **2.04 MB** (NativeAOT, aggressive trimming),
+> ~5 MB private memory with two panels, ~0% CPU when idle, zero allocations in
+> a steady frame.
 > Platform: `net11.0-windows` (preview) + C# 15.
 
 A Windows sidebar taskbar with always-on live previews of every window.
@@ -309,8 +310,9 @@ system minimize.
 
 ## 5. Acceptance criteria — actual
 
-- Single exe (NativeAOT) **1.95 MB**, zero external dependencies. ✓
-- ~4 MB private memory; CPU ≈ 0% idle; GPU — DWM composition only. ✓
+- Single exe (NativeAOT) **2.04 MB**, zero external dependencies. ✓
+- ~5 MB private memory (two panels); CPU ≈ 0% idle; GPU — DWM composition
+  only. ✓
 - Previews update at the source's own rate with no visible latency. ✓
 - Aspect ratio, gaps, click-to-switch, double-click-to-minimize, drag-reorder,
   two-section list, scrolling + virtualization, ×5 hover magnifier and ×1–5

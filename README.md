@@ -8,8 +8,8 @@ Docks to the left or right edge, reserves the work area (maximized
 windows never overlap the panel), previews update in real time straight from
 the DWM compositor — practically free in terms of resources.
 
-A single **1.95 MB** exe (.NET 11 NativeAOT, zero dependencies), ~4 MB of
-private memory, ~0% CPU when idle.
+A single **2.04 MB** exe (.NET 11 NativeAOT, zero dependencies), ~5 MB of
+private memory with a panel on every monitor, ~0% CPU when idle.
 
 ## Features
 
@@ -35,7 +35,7 @@ private memory, ~0% CPU when idle.
 
 | Action | Result |
 |---|---|
-| Click a live preview | Switch to the window (~150 ms delay — to distinguish from a double click) |
+| Click an inactive window's preview | Switch to the window (~150 ms delay — to distinguish from a double click) |
 | Click the active window's preview | Send it below all the others without minimizing; the window underneath becomes active (a monitor's only window is left alone) |
 | Click a strip | Instant restore + switch (double click does the same) |
 | Double-click a live preview (anywhere) | Minimize the window (real system minimize) into a strip |
