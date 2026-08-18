@@ -31,8 +31,7 @@ internal sealed unsafe class PanelWindow
 
     const nuint ActivateTimerId = 1;
     const nuint HoverZoomTimerId = 2;
-    const nuint MinimizeTimerId = 3;
-    /// <summary>Окно ожидания второго клика по живому тайлу (общее для левой и правой кнопки).</summary>
+    /// <summary>Окно ожидания второго клика по живому тайлу.</summary>
     const uint ClickDelayMs = 150;
     const uint HoverZoomDelayMs = 700;
     const double HoverZoomFactor = 5.0;
@@ -76,8 +75,7 @@ internal sealed unsafe class PanelWindow
 
     // Двойной клик детектируем сами: системный WM_LBUTTONDBLCLK ненадёжен,
     // когда лента перестраивается после первого клика.
-    WindowItem? _pendingLabelItem;    // живой тайл ждёт активации по таймеру
-    WindowItem? _pendingMinimizeItem; // живой тайл ждёт сворачивания по правому клику
+    WindowItem? _pendingLabelItem; // живой тайл ждёт активации по таймеру
     int _closeClickTick;
     int _closeClickX, _closeClickY;
 
@@ -85,7 +83,6 @@ internal sealed unsafe class PanelWindow
     WindowItem? _pressItem;
     WindowItem? _hoverClose;
     bool _swallowNextUp;
-    bool _swallowNextRightUp;
     int _pressX, _pressY;
 
     // Hover-лупа: наведение на превью без нажатий включает временный zoom+pan
@@ -335,15 +332,9 @@ internal sealed unsafe class PanelWindow
                 return new LRESULT(0);
 
             case PInvoke.WM_RBUTTONDOWN:
-                OnRightPress(GetXLParam(lParam), GetYLParam(lParam));
-                return new LRESULT(0);
+                return new LRESULT(0); // жест целиком обрабатывается на отпускании
 
             case PInvoke.WM_RBUTTONUP:
-                if (_swallowNextRightUp)
-                {
-                    _swallowNextRightUp = false;
-                    return new LRESULT(0);
-                }
                 OnRightClick(GetXLParam(lParam), GetYLParam(lParam));
                 return new LRESULT(0);
 
@@ -356,15 +347,6 @@ internal sealed unsafe class PanelWindow
                         _pendingLabelItem = null;
                         if (PInvoke.IsWindow(pending.Hwnd))
                             _switch.Activate(pending.Hwnd);
-                    }
-                }
-                else if (wParam.Value == MinimizeTimerId)
-                {
-                    PInvoke.KillTimer(hwnd, MinimizeTimerId);
-                    if (_pendingMinimizeItem is { } target)
-                    {
-                        _pendingMinimizeItem = null;
-                        Minimize(target);
                     }
                 }
                 else if (wParam.Value == HoverZoomTimerId)
@@ -502,7 +484,6 @@ internal sealed unsafe class PanelWindow
         if (offset == _scrollOffset)
             return;
         CancelHoverZoom(); // лента уезжает из-под курсора
-        CancelPendingMinimize();
         _scrollOffset = offset;
         PInvoke.InvalidateRect(_hwnd, null, false);
     }
@@ -551,8 +532,6 @@ internal sealed unsafe class PanelWindow
 
     void OnPress(int x, int y, bool ctrl)
     {
-        CancelPendingMinimize();
-
         // «Ручка» сверху или пустая зона — перетаскивание всей панели
         if (y < _headerPx || HitTest(x, y) is not { } li)
         {
@@ -840,21 +819,10 @@ internal sealed unsafe class PanelWindow
     }
 
     /// <summary>
-    /// Правая кнопка по тайлу: второй клик подряд ловим по нажатию — он отменяет
-    /// сворачивание и вместо него уводит окно в самый низ z-order.
+    /// Правая кнопка по тайлу. Различаем по состоянию окна, а не по числу кликов:
+    /// активное уходит вниз z-order (первый клик переключил на него, второй
+    /// убирает его назад), любое другое — сворачивается.
     /// </summary>
-    void OnRightPress(int x, int y)
-    {
-        if (_pendingMinimizeItem is not { } pending)
-            return;
-        if (HitTest(x, y) is not { IsStrip: false } li || li.Window != pending)
-            return;
-
-        CancelPendingMinimize();
-        _swallowNextRightUp = true;
-        SendToBottom(pending);
-    }
-
     void OnRightClick(int x, int y)
     {
         // Меню осталось за «ручкой» вверху и пустой частью ленты
@@ -867,11 +835,11 @@ internal sealed unsafe class PanelWindow
         if (li.IsStrip)
             return; // свёрнутое окно сворачивать некуда
 
-        // Сворачиваем не сразу: короткое окно ожидания оставляет шанс
-        // второму клику увести окно вниз z-order вместо сворачивания.
         CancelPendingActivation();
-        _pendingMinimizeItem = li.Window;
-        PInvoke.SetTimer(_hwnd, MinimizeTimerId, ClickDelayMs, null);
+        if (li.Window.Hwnd == _tracker.ForegroundWindow)
+            SendToBottom(li.Window);
+        else
+            Minimize(li.Window);
     }
 
     /// <summary>Системное сворачивание с передачей фокуса следующему по истории окну.</summary>
@@ -886,12 +854,12 @@ internal sealed unsafe class PanelWindow
     }
 
     /// <summary>
-    /// Уводит окно под все остальные. Единственное живое окно монитора
-    /// остаётся как есть — двигать его в z-order бессмысленно.
+    /// Уводит окно под все остальные, не сворачивая его. Единственное живое окно
+    /// монитора остаётся как есть — двигать его в z-order бессмысленно.
     /// </summary>
     void SendToBottom(WindowItem item)
     {
-        if (!PInvoke.IsWindow(item.Hwnd) || LiveCount() < 2)
+        if (!PInvoke.IsWindow(item.Hwnd) || !HasOtherLive(item))
             return;
 
         PInvoke.SetWindowPos(item.Hwnd, BottomAnchor, 0, 0, 0, 0,
@@ -903,15 +871,15 @@ internal sealed unsafe class PanelWindow
             _switch.ActivateMostRecentExcept(item.Hwnd);
     }
 
-    int LiveCount()
+    /// <summary>На этом мониторе есть ещё несвёрнутые окна, кроме данного?</summary>
+    bool HasOtherLive(WindowItem item)
     {
-        int count = 0;
-        foreach (var item in _mine)
+        foreach (var other in _mine)
         {
-            if (!item.IsMinimized)
-                count++;
+            if (other != item && !other.IsMinimized)
+                return true;
         }
-        return count;
+        return false;
     }
 
     void CancelPendingActivation(WindowItem? unless = null)
@@ -920,14 +888,6 @@ internal sealed unsafe class PanelWindow
             return;
         PInvoke.KillTimer(_hwnd, ActivateTimerId);
         _pendingLabelItem = null;
-    }
-
-    void CancelPendingMinimize()
-    {
-        if (_pendingMinimizeItem is null)
-            return;
-        PInvoke.KillTimer(_hwnd, MinimizeTimerId);
-        _pendingMinimizeItem = null;
     }
 
     /// <summary>Второй клик того же жеста: в пределах double-click-времени (с запасом) и рядом.</summary>

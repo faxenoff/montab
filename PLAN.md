@@ -216,11 +216,14 @@ system minimize.
   (the list reflows after the first click and the 4-pixel system zone misses).
 - **Click on a strip**: instant restore + activation; a double click is
   equivalent to a single one (the second click is a no-op).
-- **Right click on a tile**: minimize, with the same 150 ms delay.
-- **Second right click on the same tile**: instead of minimizing, the window is
-  sent to the bottom of the z-order (`HWND_BOTTOM`) and focus goes to the next
-  MRU window. A monitor's only live window is left alone — moving it in the
-  z-order means nothing.
+- **Right click on the active window's tile**: the window is sent to the bottom
+  of the z-order (`HWND_BOTTOM`) without being minimized, and focus goes to the
+  next MRU window — the one that was underneath. A monitor's only live window is
+  left alone: moving it in the z-order means nothing.
+- **Right click on any other tile**: system minimize, immediately. The branch is
+  chosen by window state rather than by click count: the "switch with the left
+  button, put it back with the right" gesture needs no waiting window, and both
+  actions are instant.
 - The context menu now lives on the top handle and the empty part of the list —
   a right click on a tile is taken by the gestures above.
 - After minimizing the active window, focus goes to the **most recently used

@@ -48,8 +48,8 @@ private memory, ~0% CPU when idle.
 | Drag a preview | Reorder (within its own section; the dragged item is highlighted) |
 | Drag the top handle or empty area | Switch edge on its own monitor; dropping it on a monitor without a panel moves it there |
 | Drag the inner edge | Panel width (3–50% of monitor width) |
-| Right click a preview | Minimize the window |
-| Right click the same preview again | Send the window below all the others (a monitor's only window is left alone) |
+| Right click the active window's preview | Send it below all the others without minimizing; the window underneath becomes active (a monitor's only window is left alone) |
+| Right click any other preview | Minimize the window |
 | Right click the top handle or empty area | Menu: dock edge, hide the panel on this display, autostart, exit |
 | Left click the tray icon | Hide/restore the panels on every monitor (the icon dims; settings are kept) |
 | Right click the tray icon | Menu: per monitor — "enabled" and "dock left/right"; autostart, exit |
