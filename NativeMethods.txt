@@ -101,6 +101,8 @@ MONITORINFOF_PRIMARY
 
 // switching
 IsWindow
+GetTopWindow
+GetWindow
 keybd_event
 GetKeyState
 

@@ -866,9 +866,30 @@ internal sealed unsafe class PanelWindow
             SET_WINDOW_POS_FLAGS.SWP_NOMOVE | SET_WINDOW_POS_FLAGS.SWP_NOSIZE |
             SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE);
 
-        // Иначе фокус остался бы у окна, которое уже под всеми остальными
-        if (item.Hwnd == _tracker.ForegroundWindow)
-            _switch.ActivateMostRecentExcept(item.Hwnd);
+        // Фокус — тому, что теперь оказалось сверху, а не последнему по истории:
+        // иначе повторение жеста чередует два окна вместо обхода всей стопки.
+        if (item.Hwnd != _tracker.ForegroundWindow)
+            return;
+        var next = TopWindowExcept(item);
+        if (next != default)
+            _switch.Activate(next);
+    }
+
+    /// <summary>Верхнее по z-order живое окно этого монитора, кроме указанного.</summary>
+    HWND TopWindowExcept(WindowItem item)
+    {
+        for (var probe = PInvoke.GetTopWindow(default); probe != default;
+             probe = PInvoke.GetWindow(probe, GET_WINDOW_CMD.GW_HWNDNEXT))
+        {
+            if (probe == item.Hwnd)
+                continue;
+            if (_tracker.TryGet(probe, out var candidate) && !candidate.IsMinimized
+                && candidate.Monitor == _display.Handle)
+            {
+                return probe;
+            }
+        }
+        return default;
     }
 
     /// <summary>На этом мониторе есть ещё несвёрнутые окна, кроме данного?</summary>

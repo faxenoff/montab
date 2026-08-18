@@ -218,10 +218,12 @@ system minimize.
   equivalent to a single one (the second click is a no-op).
 - **Click on the active window's tile**: the same waiting window, but instead of
   activating, the window is sent to the bottom of the z-order (`HWND_BOTTOM`)
-  without being minimized, and focus goes to the next MRU window — the one that
-  was underneath. That makes a pair: the first click switches to the app, the
-  repeat click puts it back. A monitor's only live window is left alone: moving
-  it in the z-order means nothing.
+  without being minimized, and focus goes to whatever ended up on top (a walk
+  from `GetTopWindow`, limited to this monitor's windows). Top rather than most
+  recent: with MRU, repeating the gesture would flip between two windows instead
+  of walking the whole stack. That makes a pair: the first click switches to the
+  app, the repeat click puts it back. A monitor's only live window is left
+  alone: moving it in the z-order means nothing.
 - **Right click on a live tile**: system minimize, immediately and for any tile
   (window state makes no difference here).
 - The context menu now lives on the top handle and the empty part of the list —
