@@ -345,7 +345,12 @@ internal sealed unsafe class PanelWindow
                     if (_pendingLabelItem is { } pending)
                     {
                         _pendingLabelItem = null;
-                        if (PInvoke.IsWindow(pending.Hwnd))
+                        if (!PInvoke.IsWindow(pending.Hwnd))
+                            break;
+                        // Клик по уже активному окну убирает его назад, а не переключает
+                        if (pending.Hwnd == _tracker.ForegroundWindow)
+                            SendToBottom(pending);
+                        else
                             _switch.Activate(pending.Hwnd);
                     }
                 }
@@ -805,8 +810,9 @@ internal sealed unsafe class PanelWindow
 
         if (!li.IsStrip)
         {
-            // Живой тайл: активация после короткого окна ожидания второго клика.
-            // Сам второй клик (двойной = свернуть) перехватывается в OnPress.
+            // Живой тайл: переключение (или уход вниз z-order, если окно уже
+            // активно) после короткого окна ожидания второго клика. Сам второй
+            // клик (двойной = свернуть) перехватывается в OnPress.
             _pendingLabelItem = li.Window;
             PInvoke.SetTimer(_hwnd, ActivateTimerId, ClickDelayMs, null);
             return;
@@ -818,11 +824,7 @@ internal sealed unsafe class PanelWindow
         _switch.Activate(li.Window.Hwnd);
     }
 
-    /// <summary>
-    /// Правая кнопка по тайлу. Различаем по состоянию окна, а не по числу кликов:
-    /// активное уходит вниз z-order (первый клик переключил на него, второй
-    /// убирает его назад), любое другое — сворачивается.
-    /// </summary>
+    /// <summary>Правая кнопка по любому живому тайлу — сворачивание, сразу.</summary>
     void OnRightClick(int x, int y)
     {
         // Меню осталось за «ручкой» вверху и пустой частью ленты
@@ -836,10 +838,7 @@ internal sealed unsafe class PanelWindow
             return; // свёрнутое окно сворачивать некуда
 
         CancelPendingActivation();
-        if (li.Window.Hwnd == _tracker.ForegroundWindow)
-            SendToBottom(li.Window);
-        else
-            Minimize(li.Window);
+        Minimize(li.Window);
     }
 
     /// <summary>Системное сворачивание с передачей фокуса следующему по истории окну.</summary>
@@ -854,8 +853,9 @@ internal sealed unsafe class PanelWindow
     }
 
     /// <summary>
-    /// Уводит окно под все остальные, не сворачивая его. Единственное живое окно
-    /// монитора остаётся как есть — двигать его в z-order бессмысленно.
+    /// Уводит окно под все остальные, не сворачивая его (повторный клик по
+    /// активному тайлу). Единственное живое окно монитора остаётся как есть —
+    /// двигать его в z-order бессмысленно.
     /// </summary>
     void SendToBottom(WindowItem item)
     {
