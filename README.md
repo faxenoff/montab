@@ -2,9 +2,15 @@
 
 **EN** | [RU](README_RU.md)
 
-A Windows sidebar taskbar with **always-on live previews** of every open
-window. One panel per monitor, each listing only the windows living on it.
-Docks to the left or right edge, reserves the work area (maximized
+Half a dozen terminals, a few AI-agent sessions — in the taskbar they are all
+the same icon with the same label, and finding the right one means alt-tabbing
+through every single one. Windows has had hover thumbnails since Vista, but you
+have to go hunting for them one hover at a time.
+
+montab is a Windows sidebar taskbar with **always-on live previews** of every
+open window: you glance at the panel and see which terminal is still chewing
+through your test suite. One panel per monitor, each listing only the windows
+living on it. Docks to the left or right edge, reserves the work area (maximized
 windows never overlap the panel), previews update in real time straight from
 the DWM compositor — practically free in terms of resources.
 
