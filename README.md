@@ -1,4 +1,4 @@
-# montab
+# montab (Monitors Tabs)
 
 **EN** | [RU](README_RU.md)
 
@@ -10,6 +10,8 @@ the DWM compositor — practically free in terms of resources.
 
 A single **~2.1 MB** exe (.NET 11 NativeAOT, zero dependencies), ~5 MB of
 private memory with a panel on every monitor, ~0% CPU when idle.
+
+![montab: a panel docked to the right edge, live previews on top, minimized windows as strips below](assets/screenshot-montab.png)
 
 ## Features
 
