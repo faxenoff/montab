@@ -30,6 +30,7 @@ internal sealed unsafe class TrayIcon : IDisposable
     // Команды монитора: CmdMonitorBase + индекс * MonitorStride + действие
     const uint CmdAutostart = 1;
     const uint CmdExit = 2;
+    const uint CmdShowAllMonitors = 3;
     const uint CmdMonitorBase = 100;
     const uint MonitorStride = 4;
     const uint MonitorToggle = 0;
@@ -298,6 +299,8 @@ internal sealed unsafe class TrayIcon : IDisposable
                     (nuint)sub.Value, Strings.Monitor(i + 1, display.Width, display.Height, display.Primary));
             }
 
+            PInvoke.AppendMenu(menu, Check(MENU_ITEM_FLAGS.MF_STRING, _host.ShowAllMonitors),
+                CmdShowAllMonitors, Strings.ShowAllMonitors);
             PInvoke.AppendMenu(menu, MENU_ITEM_FLAGS.MF_SEPARATOR, 0, null);
             PInvoke.AppendMenu(menu, Check(MENU_ITEM_FLAGS.MF_STRING, Autostart.IsEnabled()),
                 CmdAutostart, Strings.Autostart);
@@ -350,6 +353,9 @@ internal sealed unsafe class TrayIcon : IDisposable
 
         switch (cmd)
         {
+            case CmdShowAllMonitors:
+                _host.SetShowAllMonitors(!_host.ShowAllMonitors);
+                break;
             case CmdAutostart:
                 Autostart.Toggle();
                 break;

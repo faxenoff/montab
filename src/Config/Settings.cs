@@ -30,6 +30,9 @@ internal sealed class Settings
     /// <summary>Панели по мониторам; запись для монитора заводится при первом его появлении.</summary>
     public List<MonitorSettings> Monitors { get; set; } = [];
 
+    /// <summary>Каждая панель показывает окна всех мониторов, а не только своего.</summary>
+    public bool ShowAllMonitors { get; set; }
+
     // Поля панели-одиночки (версии до мультимонитора): читаются из старого
     // файла настроек и служат значениями по умолчанию для новых мониторов.
     public DockEdge Edge { get; set; } = DockEdge.Right;

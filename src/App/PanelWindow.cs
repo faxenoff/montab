@@ -16,7 +16,8 @@ namespace Montab.App;
 /// <summary>
 /// Окно панели одного монитора: WS_POPUP без рамки, докается через AppBar,
 /// не активируется по клику (WS_EX_NOACTIVATE), скрыто из alt-tab.
-/// В ленту попадают только окна своего монитора.
+/// В ленту попадают окна своего монитора — либо все, если в меню трея
+/// включена опция «видеть все мониторы».
 /// </summary>
 internal sealed unsafe class PanelWindow
 {
@@ -55,7 +56,7 @@ internal sealed unsafe class PanelWindow
     readonly SwitchController _switch;
     readonly LayoutEngine _layout = new();
     readonly Renderer _renderer = new();
-    /// <summary>Окна своего монитора; список переиспользуется между кадрами.</summary>
+    /// <summary>Окна ленты этой панели; список переиспользуется между кадрами.</summary>
     readonly List<WindowItem> _mine = [];
     IReadOnlyList<LayoutItem> _layoutItems = [];
     int _scrollOffset;
@@ -465,13 +466,14 @@ internal sealed unsafe class PanelWindow
         _wheelStepPx = LayoutEngine.Scale(60, dpi); // px за один щелчок колеса
     }
 
-    /// <summary>Окна этого монитора в порядке общей ленты (список переиспользуется).</summary>
+    /// <summary>Окна этого монитора (при опции «видеть все мониторы» — всех) в порядке общей ленты.</summary>
     IReadOnlyList<WindowItem> CollectMine()
     {
         _mine.Clear();
+        bool all = _host.ShowAllMonitors;
         foreach (var item in _tracker.Items)
         {
-            if (item.Monitor == _display.Handle)
+            if (all || item.Monitor == _display.Handle)
                 _mine.Add(item);
         }
         return _mine;
@@ -875,16 +877,17 @@ internal sealed unsafe class PanelWindow
             _switch.Activate(next);
     }
 
-    /// <summary>Верхнее по z-order живое окно этого монитора, кроме указанного.</summary>
+    /// <summary>Верхнее по z-order живое окно этого монитора (или всех — при опции «видеть все мониторы»).</summary>
     HWND TopWindowExcept(WindowItem item)
     {
+        bool all = _host.ShowAllMonitors;
         for (var probe = PInvoke.GetTopWindow(default); probe != default;
              probe = PInvoke.GetWindow(probe, GET_WINDOW_CMD.GW_HWNDNEXT))
         {
             if (probe == item.Hwnd)
                 continue;
             if (_tracker.TryGet(probe, out var candidate) && !candidate.IsMinimized
-                && candidate.Monitor == _display.Handle)
+                && (all || candidate.Monitor == _display.Handle))
             {
                 return probe;
             }
