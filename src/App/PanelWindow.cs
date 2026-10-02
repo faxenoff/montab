@@ -284,6 +284,10 @@ internal sealed unsafe class PanelWindow
                 if (IsInGrip(GetXLParam(lParam)))
                 {
                     _resizing = true;
+                    // Панель могла быть утоплена fullscreen-приложением — вернуть наверх
+                    PInvoke.SetWindowPos(hwnd, TopmostAnchor, 0, 0, 0, 0,
+                        SET_WINDOW_POS_FLAGS.SWP_NOMOVE | SET_WINDOW_POS_FLAGS.SWP_NOSIZE |
+                        SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE);
                     PInvoke.SetCapture(hwnd);
                     return new LRESULT(0);
                 }
@@ -311,9 +315,7 @@ internal sealed unsafe class PanelWindow
                 }
                 if (_resizing)
                 {
-                    _resizing = false;
-                    PInvoke.ReleaseCapture();
-                    _host.Save();
+                    PInvoke.ReleaseCapture(); // ресайз завершит WM_CAPTURECHANGED
                 }
                 else if (_press == PressState.Dragging)
                 {
@@ -372,7 +374,14 @@ internal sealed unsafe class PanelWindow
                 break;
 
             case PInvoke.WM_CAPTURECHANGED:
-                _resizing = false;
+                if (_resizing)
+                {
+                    // Переговоры с shell один раз в конце drag (и при его обрыве):
+                    // work area и максимизированные окна встают по итоговой ширине.
+                    _resizing = false;
+                    UpdatePosition();
+                    _host.Save();
+                }
                 _press = PressState.None;
                 _pressItem = null;
                 break;
@@ -410,12 +419,7 @@ internal sealed unsafe class PanelWindow
         _updatingPosition = true;
         try
         {
-            var monitor = _display.Rect;
-            int monitorWidth = _display.Width;
-            double pct = Math.Clamp(_mon.WidthPercent, Settings.MinWidthPercent, Settings.MaxWidthPercent);
-            int width = Math.Max(40, (int)Math.Round(monitorWidth * pct / 100.0));
-
-            var rc = _appBar.SetPos(_mon.Edge, monitor, width);
+            var rc = _appBar.SetPos(_mon.Edge, _display.Rect, PanelWidth());
             // MoveWindow недостаточно: бит WS_EX_TOPMOST может рассинхронизироваться
             // с фактической z-позицией — переутверждаем topmost при каждом размещении.
             PInvoke.SetWindowPos(_hwnd, TopmostAnchor,
@@ -445,7 +449,35 @@ internal sealed unsafe class PanelWindow
             return;
 
         _mon.WidthPercent = pct;
-        UpdatePosition();
+        DragSetSize();
+    }
+
+    /// <summary>
+    /// Лёгкая установка размера БЕЗ переговоров с shell — только в процессе drag,
+    /// чтобы максимизированные окна не переезжали и не мерцали на каждом шаге.
+    /// </summary>
+    void DragSetSize()
+    {
+        var rc = _display.Rect;
+        int width = PanelWidth();
+        if (_mon.Edge == DockEdge.Left)
+            rc.right = rc.left + width;
+        else
+            rc.left = rc.right - width;
+
+        PInvoke.SetWindowPos(_hwnd, TopmostAnchor,
+            rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top,
+            SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE);
+        // WM_PAINT низкоприоритетен и при потоке WM_MOUSEMOVE запаздывает —
+        // форсируем перерисовку немедленно.
+        PInvoke.UpdateWindow(_hwnd);
+    }
+
+    /// <summary>Ширина панели в пикселях: процент от монитора, минимум 40px.</summary>
+    int PanelWidth()
+    {
+        double pct = Math.Clamp(_mon.WidthPercent, Settings.MinWidthPercent, Settings.MaxWidthPercent);
+        return Math.Max(40, (int)Math.Round(_display.Width * pct / 100.0));
     }
 
     #endregion
@@ -992,6 +1024,7 @@ internal sealed unsafe class PanelWindow
                 menu,
                 TRACK_POPUP_MENU_FLAGS.TPM_RETURNCMD | TRACK_POPUP_MENU_FLAGS.TPM_RIGHTBUTTON,
                 pt.X, pt.Y, _hwnd, null);
+            PInvoke.PostMessage(_hwnd, 0 /* WM_NULL */, default, default);
 
             switch ((uint)cmd.Value)
             {

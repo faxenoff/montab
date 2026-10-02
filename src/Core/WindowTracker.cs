@@ -109,6 +109,10 @@ internal sealed unsafe class WindowTracker : IDisposable
         switch (ev)
         {
             case PInvoke.EVENT_SYSTEM_FOREGROUND:
+                // DeleteTab обычно зовут уже после показа окна, а события на это нет —
+                // перепроверяем, когда окно выходит на передний план.
+                if (_byHwnd.ContainsKey(hwnd) && IsTaskbarDeleted(hwnd))
+                    Remove(hwnd);
                 if (ForegroundWindow != hwnd)
                 {
                     ForegroundWindow = hwnd;
@@ -332,6 +336,8 @@ internal sealed unsafe class WindowTracker : IDisposable
 
         if (IsNotification(hwnd, exStyle))
             return false;
+        if (IsTaskbarDeleted(hwnd))
+            return false;
 
         // Правило alt-tab (Raymond Chen): у owned-цепочки показывается корневой владелец.
         if ((exStyle & WINDOW_EX_STYLE.WS_EX_APPWINDOW) == 0)
@@ -354,6 +360,13 @@ internal sealed unsafe class WindowTracker : IDisposable
         PInvoke.DwmGetWindowAttribute(hwnd, DWMWINDOWATTRIBUTE.DWMWA_CLOAKED, &cloaked, sizeof(int));
         return cloaked == 0;
     }
+
+    /// <summary>
+    /// Окно убрано из таскбара через ITaskbarList::DeleteTab: shell помечает его
+    /// недокументированным window prop и по нему же прячет из Alt+Tab. Стилями
+    /// это не читается (пример — всплывающее WPF-окно КОМПАС-3D).
+    /// </summary>
+    static bool IsTaskbarDeleted(HWND hwnd) => PInvoke.GetProp(hwnd, "ITaskList_Deleted") != default;
 
     /// <summary>
     /// Всплывающее уведомление (тост, баннер мессенджера, OSD), а не рабочее окно.

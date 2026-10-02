@@ -14,6 +14,7 @@ GetModuleHandleW
 SetWindowPos
 GetClientRect
 InvalidateRect
+UpdateWindow
 SetForegroundWindow
 SetWindowLongPtrW
 CREATESTRUCTW
@@ -132,6 +133,7 @@ GetAncestor
 GetLastActivePopup
 GetWindowThreadProcessId
 GetWindowPlacement
+GetPropW
 DwmGetWindowAttribute
 EVENT_SYSTEM_FOREGROUND
 EVENT_SYSTEM_MINIMIZESTART
