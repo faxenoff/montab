@@ -103,6 +103,31 @@ internal sealed unsafe class PanelHost
         _tray?.SyncIcon();
     }
 
+    /// <summary>Explorer перезапустился и забыл все appbar'ы — регистрируемся заново.</summary>
+    public void ReregisterAppBars()
+    {
+        foreach (var panel in _panels.Values)
+            panel.ReregisterAppBar();
+    }
+
+    /// <summary>
+    /// Самолечение после гибернации/сброса work area: панель, под которую
+    /// залезла рабочая область, регистрируется заново. true — что-то чинили.
+    /// </summary>
+    public bool HealAppBars()
+    {
+        bool healed = false;
+        foreach (var panel in _panels.Values)
+        {
+            if (panel.IsWorkAreaBroken())
+            {
+                panel.ReregisterAppBar();
+                healed = true;
+            }
+        }
+        return healed;
+    }
+
     /// <summary>
     /// Левый клик по иконке в трее: убрать/вернуть панели на всех мониторах.
     /// Настройки мониторов не трогаются — при возврате всё как было.

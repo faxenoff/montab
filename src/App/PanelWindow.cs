@@ -168,6 +168,30 @@ internal sealed unsafe class PanelWindow
         UpdatePosition();
     }
 
+    /// <summary>
+    /// Рабочая область монитора залезает под панель: shell потерял нашу полосу
+    /// (выход из гибернации, сброс work area). Во время ресайза перекрытие штатное.
+    /// </summary>
+    public bool IsWorkAreaBroken()
+    {
+        if (_hwnd == default || _resizing || !PInvoke.GetWindowRect(_hwnd, out RECT wnd))
+            return false;
+        var mi = new MONITORINFO { cbSize = (uint)sizeof(MONITORINFO) };
+        if (!PInvoke.GetMonitorInfo(_display.Handle, ref mi))
+            return false;
+        return Math.Min(wnd.right, mi.rcWork.right) > Math.Max(wnd.left, mi.rcWork.left);
+    }
+
+    /// <summary>Регистрация appbar'а с нуля — shell о нём забыл.</summary>
+    public void ReregisterAppBar()
+    {
+        if (_appBar is null)
+            return;
+        _appBar.Unregister();
+        _appBar.Register();
+        UpdatePosition();
+    }
+
     /// <summary>Настройки панели изменили извне (меню трея) — переразместиться.</summary>
     public void Relayout() => UpdatePosition();
 

@@ -336,7 +336,7 @@ internal sealed unsafe class WindowTracker : IDisposable
 
         if (IsNotification(hwnd, exStyle))
             return false;
-        if (IsTaskbarDeleted(hwnd))
+        if (IsTaskbarDeleted(hwnd) || IsShellCoreWindow(hwnd))
             return false;
 
         // Правило alt-tab (Raymond Chen): у owned-цепочки показывается корневой владелец.
@@ -367,6 +367,21 @@ internal sealed unsafe class WindowTracker : IDisposable
     /// это не читается (пример — всплывающее WPF-окно КОМПАС-3D).
     /// </summary>
     static bool IsTaskbarDeleted(HWND hwnd) => PInvoke.GetProp(hwnd, "ITaskList_Deleted") != default;
+
+    /// <summary>
+    /// «Голый» CoreWindow — shell-инфраструктура (Пуск, поиск, панель ввода):
+    /// попадал в ленту по UNCLOAKED в момент открытия. UWP-приложения представлены
+    /// хостом ApplicationFrameWindow, так что класс отсекается целиком.
+    /// </summary>
+    static bool IsShellCoreWindow(HWND hwnd)
+    {
+        Span<char> buffer = stackalloc char[64];
+        fixed (char* p = buffer)
+        {
+            int length = PInvoke.GetClassName(hwnd, p, buffer.Length);
+            return length > 0 && buffer[..length].SequenceEqual("Windows.UI.Core.CoreWindow");
+        }
+    }
 
     /// <summary>
     /// Всплывающее уведомление (тост, баннер мессенджера, OSD), а не рабочее окно.

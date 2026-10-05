@@ -222,11 +222,28 @@ internal sealed unsafe class TrayIcon : IDisposable
         }
     }
 
+    const nuint HealTimerId = 1;
+    const uint HealDelayMs = 1500;
+    const int MaxHealAttempts = 3;
+    const nuint PbtResumeSuspend = 0x0007;
+    const nuint PbtResumeAutomatic = 0x0012;
+    const nuint SpiSetWorkArea = 0x002F;
+    int _healAttempts;
+
+    /// <summary>Отложенная проверка: shell'у нужно время устаканить рабочую область.</summary>
+    void ScheduleHeal(bool resetAttempts = true)
+    {
+        if (resetAttempts)
+            _healAttempts = 0;
+        PInvoke.SetTimer(_hwnd, HealTimerId, HealDelayMs, null);
+    }
+
     LRESULT HandleMessage(HWND hwnd, uint msg, WPARAM wParam, LPARAM lParam)
     {
         if (msg == _taskbarCreated)
         {
             Add();
+            _host.ReregisterAppBars();
             return new LRESULT(0);
         }
 
@@ -246,7 +263,33 @@ internal sealed unsafe class TrayIcon : IDisposable
 
             case PInvoke.WM_DISPLAYCHANGE:
                 _host.RefreshDisplays();
+                ScheduleHeal();
                 return new LRESULT(0);
+
+            case PInvoke.WM_POWERBROADCAST:
+                // Выход из сна/гибернации: shell может сбросить work area
+                if (wParam.Value is PbtResumeSuspend or PbtResumeAutomatic)
+                    ScheduleHeal();
+                break;
+
+            case PInvoke.WM_SETTINGCHANGE:
+                if (wParam.Value == SpiSetWorkArea)
+                    ScheduleHeal(resetAttempts: false);
+                break;
+
+            case PInvoke.WM_TIMER:
+                if (wParam.Value == HealTimerId)
+                {
+                    PInvoke.KillTimer(hwnd, HealTimerId);
+                    // Наша же перерегистрация меняет work area и снова приводит сюда;
+                    // лимит попыток — на случай, если shell полосу так и не отдаёт.
+                    if (_healAttempts < MaxHealAttempts && _host.HealAppBars())
+                        _healAttempts++;
+                    else if (_healAttempts < MaxHealAttempts)
+                        _healAttempts = 0;
+                    return new LRESULT(0);
+                }
+                break;
 
             case PInvoke.WM_CLOSE:
                 _host.Exit();
