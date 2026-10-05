@@ -69,37 +69,95 @@ function New-IconBitmap([int]$size) {
     return $bmp
 }
 
-# Кадр ICO: до 48 px — классический DIB (32bpp + пустая AND-маска), крупнее — PNG
-function Get-FrameBytes([System.Drawing.Bitmap]$bmp) {
-    $w = $bmp.Width; $h = $bmp.Height
-    if ($w -gt 48) {
-        $ms = New-Object System.IO.MemoryStream
-        $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
-        return , $ms.ToArray()   # запятая: иначе конвейер развернёт массив в Object[]
-    }
+# Палитра кадра: четыре цвета рисунка, полупрозрачная рамка для сглаженного
+# внешнего края и смесь корпуса с акцентом для края окна. 8 цветов — 4 бита на пиксель.
+$Palette = @(
+    [System.Drawing.Color]::FromArgb(0, $Chrome),
+    $Body, $Chrome, $Accent, $Idle,
+    [System.Drawing.Color]::FromArgb(85, $Chrome),
+    [System.Drawing.Color]::FromArgb(170, $Chrome),
+    [System.Drawing.Color]::FromArgb(255, 0x2D, 0x64, 0x8C)
+)
 
-    $stride = $w * 4
-    $maskStride = [int][Math]::Floor(($w + 31) / 32) * 4
-    $bytes = New-Object byte[] ([int](40 + $stride * $h + $maskStride * $h))
-    $bw = New-Object System.IO.BinaryWriter (New-Object System.IO.MemoryStream($bytes, $true))
-    $bw.Write([int]40); $bw.Write([int]$w); $bw.Write([int]($h * 2))
-    $bw.Write([int16]1); $bw.Write([int16]32)
-    $bw.Write([int]0); $bw.Write([int]($stride * $h))
-    $bw.Write([int]0); $bw.Write([int]0); $bw.Write([int]0); $bw.Write([int]0)
-
-    # XOR-плоскость идёт снизу вверх
-    for ($y = $h - 1; $y -ge 0; $y--) {
-        for ($x = 0; $x -lt $w; $x++) {
-            $c = $bmp.GetPixel($x, $y)
-            $bw.Write([byte]$c.B); $bw.Write([byte]$c.G); $bw.Write([byte]$c.R); $bw.Write([byte]$c.A)
-        }
+$CrcTable = New-Object uint32[] 256
+for ($n = 0; $n -lt 256; $n++) {
+    [uint32]$c = $n
+    for ($k = 0; $k -lt 8; $k++) {
+        if ($c -band 1) { $c = [uint32](3988292384 -bxor ($c -shr 1)) } else { $c = $c -shr 1 }
     }
-    # AND-маска нулевая: прозрачность несёт альфа-канал
-    $bw.Flush(); $bw.Dispose()
-    return , $bytes
+    $CrcTable[$n] = $c
 }
 
-$sizes = @(16, 20, 24, 32, 48, 64, 128, 256)
+function Get-BigEndian([uint32]$v) {
+    return , [byte[]]@((($v -shr 24) -band 0xFF), (($v -shr 16) -band 0xFF), (($v -shr 8) -band 0xFF), ($v -band 0xFF))
+}
+
+function Write-PngChunk([System.IO.Stream]$stream, [string]$type, [byte[]]$data) {
+    $body = [System.Text.Encoding]::ASCII.GetBytes($type) + $data
+    [uint32]$crc = [uint32]::MaxValue
+    foreach ($byte in $body) { $crc = $CrcTable[($crc -bxor $byte) -band 0xFF] -bxor ($crc -shr 8) }
+    $crc = $crc -bxor [uint32]::MaxValue
+    $len = Get-BigEndian $data.Length
+    $stream.Write($len, 0, 4)
+    $stream.Write($body, 0, $body.Length)
+    $sum = Get-BigEndian $crc
+    $stream.Write($sum, 0, 4)
+}
+
+# Индекс ближайшего цвета палитры; сравнение в premultiplied-координатах,
+# чтобы прозрачные пиксели не тянулись к цвету по «невидимому» RGB.
+function Get-PaletteIndex([System.Drawing.Color]$c) {
+    $best = 0; $bestDist = [int]::MaxValue
+    for ($i = 0; $i -lt $Palette.Count; $i++) {
+        $p = $Palette[$i]
+        $dr = $c.R * $c.A - $p.R * $p.A
+        $dg = $c.G * $c.A - $p.G * $p.A
+        $db = $c.B * $c.A - $p.B * $p.A
+        $da = ($c.A - $p.A) * 255
+        $dist = [long]$dr * $dr + [long]$dg * $dg + [long]$db * $db + [long]$da * $da
+        if ($dist -lt $bestDist) { $bestDist = $dist; $best = $i }
+    }
+    return $best
+}
+
+# Кадр ICO: палитровый PNG (4 бита на пиксель + tRNS). Windows читает PNG-кадры
+# с Vista; палитровый вариант проверен на Windows 11.
+function Get-FrameBytes([System.Drawing.Bitmap]$bmp) {
+    $w = $bmp.Width; $h = $bmp.Height
+    $rowBytes = [int][Math]::Ceiling($w / 2.0)
+    $raw = New-Object byte[] (($rowBytes + 1) * $h)   # +1: байт фильтра (0) в начале строки
+    for ($y = 0; $y -lt $h; $y++) {
+        $row = $y * ($rowBytes + 1) + 1
+        for ($x = 0; $x -lt $w; $x++) {
+            $index = Get-PaletteIndex ($bmp.GetPixel($x, $y))
+            $shift = if ($x % 2 -eq 0) { 4 } else { 0 }
+            $at = $row + ($x -shr 1)
+            $raw[$at] = $raw[$at] -bor ($index -shl $shift)
+        }
+    }
+
+    $packed = New-Object System.IO.MemoryStream
+    $zlib = New-Object System.IO.Compression.ZLibStream($packed, [System.IO.Compression.CompressionLevel]::SmallestSize)
+    $zlib.Write($raw, 0, $raw.Length)
+    $zlib.Dispose()
+
+    $header = (Get-BigEndian $w) + (Get-BigEndian $h) + [byte[]]@(4, 3, 0, 0, 0)   # 4 бита, тип 3 (палитра)
+    $plte = [byte[]]($Palette | ForEach-Object { $_.R; $_.G; $_.B })
+    $trns = [byte[]]($Palette | ForEach-Object { $_.A })
+
+    $png = New-Object System.IO.MemoryStream
+    $signature = [byte[]]@(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
+    $png.Write($signature, 0, 8)
+    Write-PngChunk $png 'IHDR' $header
+    Write-PngChunk $png 'PLTE' $plte
+    Write-PngChunk $png 'tRNS' $trns
+    Write-PngChunk $png 'IDAT' $packed.ToArray()
+    Write-PngChunk $png 'IEND' ([byte[]]@())
+    return , $png.ToArray()   # запятая: иначе конвейер развернёт массив в Object[]
+}
+
+# 64 и 128 px не нужны: Windows уменьшает их из 256
+$sizes = @(16, 20, 24, 32, 48, 256)
 $frames = @()
 foreach ($size in $sizes) {
     $bmp = New-IconBitmap $size
