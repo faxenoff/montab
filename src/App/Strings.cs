@@ -15,6 +15,7 @@ internal static class Strings
     public static string DockLeft => Russian ? "Слева" : "Dock left";
     public static string DockRight => Russian ? "Справа" : "Dock right";
     public static string Enabled => Russian ? "Включено" : "Enabled";
+    public static string ShowAllMonitors => Russian ? "Видеть все мониторы" : "Show all displays";
     public static string HideHere => Russian ? "Скрыть на этом мониторе" : "Hide on this display";
     public static string Autostart => Russian ? "Автозапуск" : "Start with Windows";
     public static string Exit => Russian ? "Выход" : "Exit";

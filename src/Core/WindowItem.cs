@@ -12,7 +12,8 @@ internal sealed class WindowItem
     public HICON Icon;
     public bool OwnsIcon;
 
-    /// <summary>Монитор, на котором сейчас окно — определяет панель, где оно показано.</summary>
+    /// <summary>Монитор, на котором сейчас окно — определяет панель, где оно показано
+    /// (опция «видеть все мониторы» выключена).</summary>
     public HMONITOR Monitor;
 
     /// <summary>Свёрнуто системно — в ленте отображается полоской.</summary>

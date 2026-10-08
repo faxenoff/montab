@@ -42,6 +42,9 @@ internal sealed unsafe class PanelHost
     /// <summary>Все панели временно скрыты (левый клик по иконке в трее).</summary>
     public bool Hidden => _hidden;
 
+    /// <summary>Каждая панель показывает окна всех мониторов (опция в меню трея).</summary>
+    public bool ShowAllMonitors => _settings.ShowAllMonitors;
+
     public void Start()
     {
         _tray = new TrayIcon(this, _hInstance);
@@ -150,6 +153,16 @@ internal sealed unsafe class PanelHost
         _hidden &= !unhide;
         _settings.Save();
         RefreshDisplays();
+    }
+
+    public void SetShowAllMonitors(bool value)
+    {
+        if (_settings.ShowAllMonitors == value)
+            return;
+        _settings.ShowAllMonitors = value;
+        _settings.Save();
+        foreach (var panel in _panels.Values)
+            panel.Invalidate();
     }
 
     public void SetEdge(string device, DockEdge edge)
