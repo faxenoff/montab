@@ -4,15 +4,15 @@
     "net11.0-windows7.0": {
       "Microsoft.DotNet.ILCompiler": {
         "type": "Direct",
-        "requested": "[11.0.0-rc.1.26425.128, )",
-        "resolved": "11.0.0-rc.1.26425.128",
-        "contentHash": "q57ZvrTIRKI4s12hLMA3LN4Gh48CuiGMKGL0Pmz7YnGLIvkQVMX8T+DtI6VdqYaCnGTstiw1LdE2PRsd13WdNg=="
+        "requested": "[11.0.0, )",
+        "resolved": "11.0.0",
+        "contentHash": "lw6gUL92db6XPwYsQwaGwrJxgRM0X0qQKl0QkwuZIACMtgH0eFu6jmq6W+/L8qTxQZwggfV/dGjICyMqVHdehg=="
       },
       "Microsoft.NET.ILLink.Tasks": {
         "type": "Direct",
-        "requested": "[11.0.0-rc.1.26425.128, )",
-        "resolved": "11.0.0-rc.1.26425.128",
-        "contentHash": "oMgihfjNcxZpR9B/O5Ke8Qmr8CJcpdzG4PnVYtA6Ja4g41NELxLRuiqqh5ys7w+ourEBNng2IIZnrlMJXfncmQ=="
+        "requested": "[11.0.0, )",
+        "resolved": "11.0.0",
+        "contentHash": "gK2aq4XvChj5kvozpPHrkfKkr7zc5Z4xoTrJb4GPZzDEPMlCk0TX632bwY3LsWcX2UVcVRQBBGzsBGC2lq6YhA=="
       },
       "Microsoft.Windows.CsWin32": {
         "type": "Direct",
@@ -47,17 +47,17 @@
     "net11.0-windows7.0/win-x64": {
       "Microsoft.DotNet.ILCompiler": {
         "type": "Direct",
-        "requested": "[11.0.0-rc.1.26425.128, )",
-        "resolved": "11.0.0-rc.1.26425.128",
-        "contentHash": "q57ZvrTIRKI4s12hLMA3LN4Gh48CuiGMKGL0Pmz7YnGLIvkQVMX8T+DtI6VdqYaCnGTstiw1LdE2PRsd13WdNg==",
+        "requested": "[11.0.0, )",
+        "resolved": "11.0.0",
+        "contentHash": "lw6gUL92db6XPwYsQwaGwrJxgRM0X0qQKl0QkwuZIACMtgH0eFu6jmq6W+/L8qTxQZwggfV/dGjICyMqVHdehg==",
         "dependencies": {
-          "runtime.win-x64.Microsoft.DotNet.ILCompiler": "11.0.0-rc.1.26425.128"
+          "runtime.win-x64.Microsoft.DotNet.ILCompiler": "11.0.0"
         }
       },
       "runtime.win-x64.Microsoft.DotNet.ILCompiler": {
         "type": "Transitive",
-        "resolved": "11.0.0-rc.1.26425.128",
-        "contentHash": "0Frg4z5XxWgW6GxrjFX7NkROqkPbuA3f+0q9Di24jf27EOZ4KA3UaKl8QptT2XPspewfPO4buICFtFFc0ULWsA=="
+        "resolved": "11.0.0",
+        "contentHash": "GhYzDaU4IbNnTgyFgxT2URnUogx+xuphFHscUx8v1H8ZRKiIlYa/8Lkpd0SXJZ+pEWHJFJXLvEPpWLEcwyNkmQ=="
       }
     }
   }
