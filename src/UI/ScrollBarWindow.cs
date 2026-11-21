@@ -30,10 +30,11 @@ internal sealed unsafe class ScrollBarWindow
     // трек почти прозрачен (вуаль на всю высоту и была главной грязью),
     // тело бегунка — умеренная альфа, тёмная кайма держит контур на светлом.
     static readonly uint TrackPixel = Premultiply(36, 30);
-    // Тело темнее и прозрачнее прежнего (было 150/200): при почти помещающейся
-    // ленте бегунок занимает почти всю полосу и не должен её высветлять.
-    static readonly uint ThumbBodyPixel = Premultiply(110, 150);
-    static readonly uint ThumbBodyDragPixel = Premultiply(150, 180);
+    // Тело тёмное и прозрачное (начинали с 150/200, затем 110/150 — выглядело
+    // грязно): при почти помещающейся ленте бегунок занимает почти всю полосу
+    // и не должен ложиться на превью серой вуалью.
+    static readonly uint ThumbBodyPixel = Premultiply(80, 110);
+    static readonly uint ThumbBodyDragPixel = Premultiply(120, 140);
     static readonly uint ThumbBorderPixel = Premultiply(90, 55); // мягкий контур, без резкого контраста
 
     /// <summary>Premultiplied-пиксель серого цвета: value × alpha в каждом канале.</summary>
