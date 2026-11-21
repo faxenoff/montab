@@ -14,7 +14,7 @@ montab — боковая панель-таскбар для Windows с **пос
 перекрывают панель), обновление превью — в реальном времени через DWM-композитор,
 практически бесплатно по ресурсам.
 
-Один exe **~2,1 МБ** (.NET 11 NativeAOT, ноль зависимостей), ~5 МБ собственной
+Один exe **~0,9 МБ** (.NET 11 NativeAOT, ноль зависимостей), ~5 МБ собственной
 памяти с панелью на каждом мониторе, ~0% CPU в простое.
 
 ![montab: панель у правого края, живые превью сверху, свёрнутые окна полосками снизу](assets/screenshot-montab.png)
@@ -97,11 +97,11 @@ New-ItemProperty 'HKCU:\Software\Policies\Microsoft\Edge' `
 
 ## Сборка
 
-Требуется .NET 11 SDK (сейчас — preview 5+) и MSVC (для NativeAOT-линковки). Windows 10 1809+.
+Требуется .NET 11 SDK (версия закреплена в `global.json` — 11.0.100) и MSVC (для NativeAOT-линковки). Windows 10 1809+.
 
 ```powershell
 dotnet build                           # dev-сборка
-dotnet publish -c Release -r win-x64   # один exe ~2 МБ
+dotnet publish -c Release -r win-x64   # один exe ~0,9 МБ
 ```
 
 Release-сборка обрезана жёстко: без стектрейсов и текстов исключений

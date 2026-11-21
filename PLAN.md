@@ -3,10 +3,10 @@
 # montab — architecture and final requirements (as built)
 
 > Status: fully implemented, see README for user-facing documentation.
-> Actual metrics: single exe **~2.1 MB** (NativeAOT, aggressive trimming),
+> Actual metrics: single exe **~0.9 MB** (NativeAOT, aggressive trimming),
 > ~5 MB private memory with two panels, ~0% CPU when idle, zero allocations in
 > a steady frame.
-> Platform: `net11.0-windows` (preview) + C# 15.
+> Platform: `net11.0-windows` + C# 15.
 
 A Windows sidebar taskbar with always-on live previews of every window.
 Docks to the left or right of the work area; click to switch, hover to
@@ -67,10 +67,13 @@ Two hard-earned practical rules:
   per-DPI precomputed sizes. The originally planned Direct2D turned out to be
   unnecessary: GDI fully covers dark background + frames + text, and the
   previews themselves are drawn by DWM.
-- **JSON settings**: System.Text.Json source generation (no reflection).
+- **JSON settings**: a hand-written sequential reader and writer
+  (`src/Config/Json.cs`); the file is read and written straight through Win32.
+  System.Text.Json was removed: it alone took about half of the exe.
 
-Static exe imports are OS-only: kernel32, advapi32 (autostart), bcrypt, ole32,
-UCRT api-sets; user32/gdi32/dwmapi/shell32 load lazily on first call.
+Static exe imports are OS-only: kernel32, user32, gdi32, dwmapi, shell32,
+advapi32 (autostart), ole32, bcrypt, UCRT api-sets. All WinAPI is bound through
+the import table (`DirectPInvoke`) and resolved at process start.
 
 ### 1.3. Panel docking: AppBar API
 
@@ -310,7 +313,7 @@ system minimize.
 
 ## 5. Acceptance criteria — actual
 
-- Single exe (NativeAOT) **~2.1 MB**, zero external dependencies. ✓
+- Single exe (NativeAOT) **~0.9 MB**, zero external dependencies. ✓
 - ~5 MB private memory (two panels); CPU ≈ 0% idle; GPU — DWM composition
   only. ✓
 - Previews update at the source's own rate with no visible latency. ✓

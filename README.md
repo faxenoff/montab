@@ -14,7 +14,7 @@ living on it. Docks to the left or right edge, reserves the work area (maximized
 windows never overlap the panel), previews update in real time straight from
 the DWM compositor — practically free in terms of resources.
 
-A single **~2.1 MB** exe (.NET 11 NativeAOT, zero dependencies), ~5 MB of
+A single **~0.9 MB** exe (.NET 11 NativeAOT, zero dependencies), ~5 MB of
 private memory with a panel on every monitor, ~0% CPU when idle.
 
 ![montab: a panel docked to the right edge, live previews on top, minimized windows as strips below](assets/screenshot-montab.png)
@@ -96,12 +96,12 @@ The cost: a fully covered browser keeps spending GPU/CPU on rendering. Minimized
 
 ## Building
 
-Requires the .NET 11 SDK (currently preview 5+) and MSVC (for NativeAOT
+Requires the .NET 11 SDK (pinned in `global.json` — 11.0.100) and MSVC (for NativeAOT
 linking). Windows 10 1809+.
 
 ```powershell
 dotnet build                           # dev build
-dotnet publish -c Release -r win-x64   # single ~2 MB exe
+dotnet publish -c Release -r win-x64   # single ~0.9 MB exe
 ```
 
 The Release build is trimmed hard: no stack traces and no exception message
