@@ -3,7 +3,14 @@ using Windows.Win32.Foundation;
 
 namespace Montab.UI;
 
-internal readonly record struct LayoutItem(WindowItem Window, RECT Bounds, RECT Preview, RECT Label, bool IsStrip);
+internal readonly struct LayoutItem(WindowItem window, RECT bounds, RECT preview, RECT label, bool isStrip)
+{
+    public readonly WindowItem Window = window;
+    public readonly RECT Bounds = bounds;
+    public readonly RECT Preview = preview;
+    public readonly RECT Label = label;
+    public readonly bool IsStrip = isStrip;
+}
 
 /// <summary>
 /// Раскладка ленты: живые тайлы (превью по аспекту окна-источника + подпись)

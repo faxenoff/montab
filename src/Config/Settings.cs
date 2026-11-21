@@ -1,5 +1,6 @@
-using System.Globalization;
 using System.Text;
+using Windows.Win32;
+using Windows.Win32.Foundation;
 
 namespace Montab.Config;
 
@@ -56,45 +57,59 @@ internal sealed class Settings
         return created;
     }
 
-    static string Dir => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "montab");
+    const string FolderName = "\\montab";
+    const string FileName = "\\settings.json";
 
-    static string FilePath => Path.Combine(Dir, "settings.json");
+    /// <summary>Папка настроек в %APPDATA%; null — система не отдала путь к профилю.</summary>
+    static unsafe string? Dir
+    {
+        get
+        {
+            Guid folder = PInvoke.FOLDERID_RoamingAppData;
+            PWSTR path = default;
+            string? dir = PInvoke.SHGetKnownFolderPath(&folder, 0, default, &path).Succeeded
+                ? path.ToString() + FolderName
+                : null;
+            PInvoke.CoTaskMemFree(path);
+            return dir;
+        }
+    }
 
     public static Settings Load()
     {
-        try
+        string? dir = Dir;
+        var text = dir is null ? null : TextFile.Read(dir + FileName);
+        if (text is not null)
         {
-            if (File.Exists(FilePath))
+            try
             {
-                var loaded = Parse(File.ReadAllText(FilePath));
+                var loaded = Parse(text);
                 loaded.WidthPercent = Math.Clamp(loaded.WidthPercent, MinWidthPercent, MaxWidthPercent);
                 foreach (var mon in loaded.Monitors)
                     mon.WidthPercent = Math.Clamp(mon.WidthPercent, MinWidthPercent, MaxWidthPercent);
                 return loaded;
             }
-        }
-        catch (Exception ex) when (ex is IOException or FormatException or UnauthorizedAccessException)
-        {
+            catch (FormatException)
+            {
+            }
         }
 
         return new Settings();
     }
 
-    public void Save()
+    public unsafe void Save()
     {
-        try
-        {
-            Directory.CreateDirectory(Dir);
-            File.WriteAllText(FilePath, ToJson());
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-        }
+        string? dir = Dir;
+        if (dir is null)
+            return;
+        fixed (char* p = dir)
+            PInvoke.CreateDirectory(p, null);
+        TextFile.Write(dir + FileName, ToJson());
     }
 
     // Формат файла — тот же, что писал System.Text.Json (отступ 2 пробела, enum
     // строкой): файлы прежних версий читаются, новые читаются прежними версиями.
+    // Отличие одно: дробные числа пишутся с точностью до шести знаков.
 
     /// <summary>Разбор settings.json; неизвестные поля пропускаются, ошибка формата — FormatException.</summary>
     internal static Settings Parse(ReadOnlySpan<char> text)
@@ -167,12 +182,14 @@ internal sealed class Settings
             sb.Append(i == 0 ? "\r\n    {\r\n      \"Device\": " : ",\r\n    {\r\n      \"Device\": ");
             JsonWriter.AppendString(sb, mon.Device);
             sb.Append(",\r\n      \"Edge\": \"").Append(EdgeName(mon.Edge));
-            sb.Append("\",\r\n      \"WidthPercent\": ").Append(mon.WidthPercent.ToString(CultureInfo.InvariantCulture));
+            sb.Append("\",\r\n      \"WidthPercent\": ");
+            JsonWriter.AppendNumber(sb, mon.WidthPercent);
             sb.Append(",\r\n      \"Enabled\": ").Append(mon.Enabled ? "true" : "false");
             sb.Append("\r\n    }");
         }
         sb.Append(Monitors.Count > 0 ? "\r\n  ],\r\n  \"Edge\": \"" : "],\r\n  \"Edge\": \"").Append(EdgeName(Edge));
-        sb.Append("\",\r\n  \"WidthPercent\": ").Append(WidthPercent.ToString(CultureInfo.InvariantCulture));
+        sb.Append("\",\r\n  \"WidthPercent\": ");
+        JsonWriter.AppendNumber(sb, WidthPercent);
         sb.Append("\r\n}");
         return sb.ToString();
     }

@@ -195,3 +195,29 @@ ABN_POSCHANGED
 ABN_FULLSCREENAPP
 ABE_LEFT
 ABE_RIGHT
+
+// single instance
+CreateMutexW
+WIN32_ERROR
+
+// autostart (registry)
+RegGetValueW
+RegSetKeyValueW
+RegDeleteKeyValueW
+HKEY_CURRENT_USER
+REG_VALUE_TYPE
+
+// settings file
+SHGetKnownFolderPath
+FOLDERID_RoamingAppData
+CoTaskMemFree
+CreateDirectoryW
+CreateFileW
+ReadFile
+WriteFile
+GetFileSizeEx
+INVALID_HANDLE_VALUE
+GENERIC_ACCESS_RIGHTS
+MultiByteToWideChar
+WideCharToMultiByte
+CP_UTF8

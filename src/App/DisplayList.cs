@@ -7,8 +7,13 @@ using Windows.Win32.Graphics.Gdi;
 namespace Montab.App;
 
 /// <summary>Монитор системы на момент перечисления.</summary>
-internal readonly record struct DisplayInfo(HMONITOR Handle, string Device, RECT Rect, bool Primary)
+internal readonly struct DisplayInfo(HMONITOR handle, string device, RECT rect, bool primary)
 {
+    public readonly HMONITOR Handle = handle;
+    public readonly string Device = device;
+    public readonly RECT Rect = rect;
+    public readonly bool Primary = primary;
+
     public int Width => Rect.right - Rect.left;
     public int Height => Rect.bottom - Rect.top;
 }

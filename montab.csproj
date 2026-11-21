@@ -48,4 +48,20 @@
     <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="7" />
   </ItemGroup>
 
+  <!-- WinAPI вызывается напрямую через таблицу импорта: без ленивого загрузчика
+       библиотек в рантайме (−47 КБ). Все функции разрешаются при старте процесса. -->
+  <ItemGroup>
+    <DirectPInvoke Include="USER32" />
+    <DirectPInvoke Include="GDI32" />
+    <DirectPInvoke Include="KERNEL32" />
+    <DirectPInvoke Include="SHELL32" />
+    <DirectPInvoke Include="dwmapi" />
+    <DirectPInvoke Include="ADVAPI32" />
+    <DirectPInvoke Include="OLE32" />
+    <!-- Библиотеки импорта, которых нет в стандартном наборе линковки NativeAOT -->
+    <LinkerArg Include="gdi32.lib" />
+    <LinkerArg Include="dwmapi.lib" />
+    <LinkerArg Include="shell32.lib" />
+  </ItemGroup>
+
 </Project>

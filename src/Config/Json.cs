@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 
 namespace Montab.Config;
@@ -133,13 +132,70 @@ internal ref struct JsonReader
         return (char)value;
     }
 
+    /// <summary>
+    /// Десятичное число по грамматике JSON. До 15 значащих цифр результат тот же,
+    /// что у double.Parse; на более длинных записях возможно расхождение в последних битах.
+    /// </summary>
     public double ReadNumber()
     {
-        Peek();
-        int start = _pos;
-        while (_pos < _text.Length && _text[_pos] is >= '0' and <= '9' or '-' or '+' or '.' or 'e' or 'E')
+        // Мантисса копится, пока следующая цифра гарантированно помещается в ulong
+        const ulong MantissaLimit = (ulong.MaxValue - 9) / 10;
+
+        bool negative = TryConsume('-');
+        ulong mantissa = 0;
+        int scale = 0;
+
+        int digits = 0;
+        for (; _pos < _text.Length && _text[_pos] is >= '0' and <= '9'; _pos++, digits++)
+        {
+            if (mantissa <= MantissaLimit)
+                mantissa = mantissa * 10 + (uint)(_text[_pos] - '0');
+            else
+                scale++;
+        }
+        if (digits == 0)
+            throw new FormatException();
+
+        if (_pos < _text.Length && _text[_pos] == '.')
+        {
             _pos++;
-        return double.Parse(_text[start.._pos], NumberStyles.Float, CultureInfo.InvariantCulture);
+            digits = 0;
+            for (; _pos < _text.Length && _text[_pos] is >= '0' and <= '9'; _pos++, digits++)
+            {
+                if (mantissa <= MantissaLimit)
+                {
+                    mantissa = mantissa * 10 + (uint)(_text[_pos] - '0');
+                    scale--;
+                }
+            }
+            if (digits == 0)
+                throw new FormatException();
+        }
+
+        if (_pos < _text.Length && _text[_pos] is 'e' or 'E')
+        {
+            _pos++;
+            bool negativeExponent = false;
+            if (_pos < _text.Length && _text[_pos] is '+' or '-')
+                negativeExponent = _text[_pos++] == '-';
+            int exponent = 0;
+            digits = 0;
+            for (; _pos < _text.Length && _text[_pos] is >= '0' and <= '9'; _pos++, digits++)
+            {
+                // Дальше 10^±400 double всё равно не различает — порядок не накапливаем
+                if (exponent < 1000)
+                    exponent = exponent * 10 + (_text[_pos] - '0');
+            }
+            if (digits == 0)
+                throw new FormatException();
+            scale += negativeExponent ? -exponent : exponent;
+        }
+
+        double power = 1;
+        for (int i = Math.Min(Math.Abs(scale), 400); i > 0; i--)
+            power *= 10;
+        double value = scale < 0 ? mantissa / power : mantissa * power;
+        return negative ? -value : value;
     }
 
     public bool ReadBool()
@@ -217,6 +273,32 @@ internal static class JsonWriter
                 sb.Append(c);
         }
         sb.Append('"');
+    }
+
+    /// <summary>Число с фиксированной точностью: до шести знаков после запятой, без хвостовых нулей.</summary>
+    public static void AppendNumber(StringBuilder sb, double value)
+    {
+        const int Decimals = 6;
+        const long Scale = 1_000_000;
+
+        long scaled = (long)Math.Round(value * Scale);
+        if (scaled < 0)
+        {
+            sb.Append('-');
+            scaled = -scaled;
+        }
+        sb.Append(scaled / Scale);
+
+        long fraction = scaled % Scale;
+        if (fraction == 0)
+            return;
+        int width = Decimals;
+        for (; fraction % 10 == 0; fraction /= 10)
+            width--;
+        Span<char> text = stackalloc char[Decimals];
+        for (int i = width - 1; i >= 0; i--, fraction /= 10)
+            text[i] = (char)('0' + fraction % 10);
+        sb.Append('.').Append(text[..width]);
     }
 
     static char HexDigit(int value) => (char)(value < 10 ? '0' + value : 'a' + value - 10);

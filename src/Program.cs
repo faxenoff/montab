@@ -1,10 +1,14 @@
 using Montab.App;
 using Montab.Config;
+using System.Runtime.InteropServices;
 using Windows.Win32;
+using Windows.Win32.Foundation;
 using Windows.Win32.UI.WindowsAndMessaging;
 
-using var singleInstance = new Mutex(initiallyOwned: true, "montab.single-instance", out bool isFirst);
-if (!isFirst)
+// Единственный экземпляр: именованный мьютекс держится до выхода процесса,
+// хэндл намеренно не закрывается — его освободит система.
+PInvoke.CreateMutex(null, true, "montab.single-instance");
+if (Marshal.GetLastPInvokeError() == (int)WIN32_ERROR.ERROR_ALREADY_EXISTS)
     return;
 
 var host = new PanelHost(Settings.Load());
